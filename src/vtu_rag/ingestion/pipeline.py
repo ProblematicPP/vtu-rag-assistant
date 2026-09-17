@@ -15,6 +15,7 @@ from vtu_rag.ingestion.parsers import parse_document
 from vtu_rag.ingestion.sources import DiscoveredNote, NoteSource
 from vtu_rag.models import Chunk, Module, Note, NoteStatus, Subject
 from vtu_rag.repositories import CatalogRepository, NoteRepository
+from vtu_rag.services.cache import ResponseCache
 from vtu_rag.services.embeddings import EmbeddingError, EmbeddingProvider
 from vtu_rag.services.search import SearchService
 
@@ -70,8 +71,10 @@ class IngestionService:
         db: Database,
         search: SearchService,
         embeddings: EmbeddingProvider,
+        cache: ResponseCache | None = None,
     ):
         self.settings = settings
+        self.cache = cache
         self.db = db
         self.search = search
         self.embeddings = embeddings
@@ -96,6 +99,8 @@ class IngestionService:
         async for discovered in source.discover():
             report.outcomes.append(await self.ingest(discovered, force=force, catalog=catalog))
         report.invalid_paths = list(getattr(source, "skipped", []))
+        if report.count(IngestStatus.INDEXED):
+            await self._invalidate_cache()
         logger.info("Sync finished: %s", report.summary())
         return report
 
@@ -106,7 +111,9 @@ class IngestionService:
         force: bool = False,
         catalog: dict[str, CatalogSubject] | None = None,
     ) -> IngestOutcome:
-        catalog = catalog if catalog is not None else load_catalog(self.data_dir)
+        # Within sync() the catalogue is passed in and the cache is invalidated once at the end
+        batch = catalog is not None
+        catalog = catalog if batch else load_catalog(self.data_dir)
         uri = discovered.source_uri
 
         async with self.db.session() as session:
@@ -128,7 +135,7 @@ class IngestionService:
             note_id = note.id
 
         try:
-            return await self._index_note(note_id, discovered, subject, module, old_doc_ids)
+            outcome = await self._index_note(note_id, discovered, subject, module, old_doc_ids)
         except Exception as exc:
             logger.exception("Failed to ingest %s", uri)
             async with self.db.session() as session:
@@ -136,6 +143,9 @@ class IngestionService:
                 if failed := await repo.get(note_id):
                     await repo.mark_failed(failed, str(exc))
             return IngestOutcome(uri, IngestStatus.FAILED, note_id=note_id, error=str(exc))
+        if not batch:
+            await self._invalidate_cache()
+        return outcome
 
     async def delete_note(self, note_id: int) -> bool:
         async with self.db.session() as session:
@@ -145,9 +155,14 @@ class IngestionService:
                 return False
             await self.search.delete_documents(await repo.chunk_doc_ids(note_id))
             await repo.delete(note)
+        await self._invalidate_cache()
         return True
 
     # ---------------------------------------------------------------- helpers
+    async def _invalidate_cache(self) -> None:
+        if self.cache is not None:
+            await self.cache.invalidate()
+
     def _is_up_to_date(self, note: Note | None, discovered: DiscoveredNote) -> bool:
         return (
             note is not None
