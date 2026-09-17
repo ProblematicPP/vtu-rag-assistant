@@ -1,0 +1,88 @@
+# Seed catalogue of subjects and module titles.
+#
+# Loaded on API startup (and by `scripts/ingest.py`). Subjects discovered in the
+# notes folder that are not listed here are still ingested; they just get their
+# code as the name until you add them here.
+#
+# NOTE: Seeded for CSE, 2022 scheme. Codes/titles were entered by hand —
+# verify against the official VTU scheme & syllabus PDFs and edit freely.
+#
+# Folder layout this maps to:
+#   data/<branch>/<scheme>/sem<N>/<SUBJECT_CODE>/module<N>.pdf
+
+branches:
+  cse:
+    name: Computer Science and Engineering
+    schemes:
+      "2022":
+        subjects:
+          # ----------------------------------------------------------- sem 3
+          - code: BCS301
+            name: Mathematics for Computer Science
+            semester: 3
+          - code: BCS302
+            name: Digital Design and Computer Organization
+            semester: 3
+          - code: BCS303
+            name: Operating Systems
+            semester: 3
+            modules:
+              1: Introduction to Operating Systems and System Structures
+              2: Process Management and CPU Scheduling
+              3: Process Synchronization and Deadlocks
+              4: Memory Management
+              5: File Systems and Secondary Storage
+          - code: BCS304
+            name: Data Structures and Applications
+            semester: 3
+            modules:
+              1: Introduction to Data Structures, Arrays and Stacks
+              2: Queues and Linked Lists
+              3: Linked Lists and Trees
+              4: Trees and Graphs
+              5: Hashing and Priority Queues
+          - code: BCS306A
+            name: Object Oriented Programming with Java
+            semester: 3
+          # ----------------------------------------------------------- sem 4
+          - code: BCS401
+            name: Analysis and Design of Algorithms
+            semester: 4
+            modules:
+              1: Introduction and Fundamentals of Algorithm Efficiency
+              2: Brute Force and Decrease-and-Conquer
+              3: Divide-and-Conquer and Transform-and-Conquer
+              4: Dynamic Programming
+              5: Greedy Technique, Backtracking and Branch-and-Bound
+          - code: BCS402
+            name: Microcontrollers
+            semester: 4
+          - code: BCS403
+            name: Database Management Systems
+            semester: 4
+            modules:
+              1: Introduction to Databases and the ER Model
+              2: Relational Model and Relational Algebra
+              3: SQL
+              4: Normalization
+              5: Transaction Processing and Concurrency Control
+          - code: BCS405A
+            name: Discrete Mathematical Structures
+            semester: 4
+          # ----------------------------------------------------------- sem 5
+          - code: BCS501
+            name: Software Engineering and Project Management
+            semester: 5
+          - code: BCS502
+            name: Computer Networks
+            semester: 5
+          - code: BCS503
+            name: Theory of Computation
+            semester: 5
+          # ----------------------------------------------------------- sem 6
+          - code: BCS601
+            name: Cloud Computing
+            semester: 6
+          - code: BCS602
+            name: Machine Learning
+            semester: 6
