@@ -82,7 +82,7 @@ services:
 
   # -------------------------------------------------------------------- LLM
   ollama:
-    image: ollama/ollama:latest
+    image: ollama/ollama:${OLLAMA_IMAGE_TAG:-latest}
     volumes:
       - ollama_data:/root/.ollama
     ports:
@@ -105,7 +105,7 @@ services:
 
   # One-shot: pulls the configured model into the ollama volume, then exits.
   ollama-init:
-    image: ollama/ollama:latest
+    image: ollama/ollama:${OLLAMA_IMAGE_TAG:-latest}
     environment:
       OLLAMA_HOST: http://ollama:11434
     entrypoint: ["/bin/sh", "-c", "ollama pull ${OLLAMA_MODEL:-llama3.2:3b}"]
