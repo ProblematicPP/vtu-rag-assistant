@@ -138,11 +138,18 @@ services:
   gradio:
     <<: *app
     command: ["python", "-m", "vtu_rag.ui.gradio_app"]
+    environment:
+      GRADIO_ANALYTICS_ENABLED: "False"
     ports:
       - "${GRADIO_HOST_PORT:-7860}:7860"
     depends_on:
       api:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:7860/ >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
 
   telegram-bot:
     <<: *app

@@ -169,10 +169,14 @@ def build_app() -> gr.Blocks:
                         buttons=["copy"],
                     ),
                     additional_inputs=[semester, subject, modules, mode],
+                    # With additional inputs, each example must supply every input
                     examples=[
-                        "What is a system call? List its types.",
-                        "Differentiate between monolithic and microkernel structures.",
-                        "Explain the role of interrupts in an operating system.",
+                        [q, "3", "BCS303", [], next(iter(MODES))]
+                        for q in (
+                            "What is a system call? List its types.",
+                            "Differentiate between monolithic and microkernel structures.",
+                            "Explain the role of interrupts in an operating system.",
+                        )
                     ],
                     fill_height=True,
                 )
@@ -194,6 +198,7 @@ if __name__ == "__main__":
     logging.basicConfig(level=settings.log_level)
     build_app().launch(
         server_name="0.0.0.0",
+        enable_monitoring=False,
         server_port=int(os.getenv("GRADIO_SERVER_PORT", "7860")),
         theme=gr.themes.Soft(primary_hue="indigo"),
         css=CSS,
