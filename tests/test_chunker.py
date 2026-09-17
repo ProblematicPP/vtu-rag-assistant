@@ -32,9 +32,11 @@ def test_heading_detection(line: str, level: int | None):
 
 
 def test_sections_become_separate_chunks_with_heading_paths():
-    doc = parse_text(
-        f"# Memory\n\n## Paging\n\n{words(120, 'p')}\n\n## Segmentation\n\n{words(120, 's')}".encode()
+    text = (
+        f"# Memory\n\n## Paging\n\n{words(120, 'p')}\n\n"
+        f"## Segmentation\n\n{words(120, 's')}"
     )
+    doc = parse_text(text.encode())
     chunks = SectionChunker(target_words=300, overlap_words=20, min_words=50).chunk(doc)
     assert [c.section_heading for c in chunks] == ["Memory > Paging", "Memory > Segmentation"]
     assert chunks[0].text.startswith("p0") and chunks[1].text.startswith("s0")

@@ -35,12 +35,16 @@ class Module(TimestampMixin, Base):
     __table_args__ = (UniqueConstraint("subject_id", "number", name="uq_module_subject_number"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    subject_id: Mapped[int] = mapped_column(ForeignKey("subjects.id", ondelete="CASCADE"), index=True)
+    subject_id: Mapped[int] = mapped_column(
+        ForeignKey("subjects.id", ondelete="CASCADE"), index=True
+    )
     number: Mapped[int] = mapped_column(Integer)
     title: Mapped[str | None] = mapped_column(String(255))
 
     subject: Mapped[Subject] = relationship(back_populates="modules")
-    notes: Mapped[list["Note"]] = relationship(back_populates="module", cascade="all, delete-orphan")
+    notes: Mapped[list["Note"]] = relationship(
+        back_populates="module", cascade="all, delete-orphan"
+    )
 
     @property
     def display_title(self) -> str:

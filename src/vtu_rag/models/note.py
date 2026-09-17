@@ -42,6 +42,8 @@ class Note(TimestampMixin, Base):
     )
     error: Mapped[str | None] = mapped_column(Text)
     page_count: Mapped[int | None] = mapped_column(Integer)
+    # Model used for the chunk vectors; None means indexed for BM25 only
+    embedding_model: Mapped[str | None] = mapped_column(String(128))
     indexed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     module: Mapped["Module"] = relationship(back_populates="notes")

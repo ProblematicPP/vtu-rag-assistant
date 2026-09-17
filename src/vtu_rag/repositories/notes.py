@@ -85,10 +85,13 @@ class NoteRepository:
         self.session.add_all(chunks)
         await self.session.flush()
 
-    async def mark_indexed(self, note: Note, page_count: int | None) -> None:
+    async def mark_indexed(
+        self, note: Note, page_count: int | None, embedding_model: str | None
+    ) -> None:
         note.status = NoteStatus.INDEXED
         note.error = None
         note.page_count = page_count
+        note.embedding_model = embedding_model
         note.indexed_at = datetime.now(UTC)
         await self.session.flush()
 

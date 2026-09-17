@@ -1,6 +1,6 @@
 """Derives syllabus metadata from a note's location in the notes tree.
 
-    <data_dir>/<branch>/<scheme>/<semester>/<SUBJECT_CODE>/module<N>[anything].<ext>
+<data_dir>/<branch>/<scheme>/<semester>/<SUBJECT_CODE>/module<N>[anything].<ext>
 """
 
 import re
