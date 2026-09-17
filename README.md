@@ -42,10 +42,16 @@ note, so you can ask questions right away.
 | API docs (Swagger) | http://localhost:8000/docs |
 | Health | http://localhost:8000/health |
 | Airflow (`admin` / `admin`) | http://localhost:8080 |
-| Langfuse | http://localhost:3000 |
+| Langfuse (`admin@example.com` / `vtu-rag-admin`) | http://localhost:3000 |
 | OpenSearch | http://localhost:9200 |
 
 **No NVIDIA GPU?** Use `docker compose -f docker-compose.yml -f docker-compose.cpu.yml up --build`.
+
+**Answer quality.** The default `llama3.2:3b` fits in 6 GB of VRAM and answers in a few seconds (the
+first request after startup is slower while the model loads). Being small, it sometimes adds detail
+that isn't in your notes, even though the prompt forbids it — always check answers against the cited
+excerpt. With more VRAM, set `OLLAMA_MODEL=qwen2.5:7b-instruct` (or another larger model) in `.env`
+for noticeably better grounding, then run `docker compose run --rm ollama-init`.
 
 **Port already in use?** Every host port is configurable in `.env` (`API_HOST_PORT`, `REDIS_HOST_PORT`, and so on).
 
@@ -121,8 +127,10 @@ rewritten queries, and a step-by-step `steps` log of the agent's run.
   `LLM_API_KEY` and `LLM_API_MODEL`.
 - **Caching:** answers are cached in Redis, keyed by question, filters and model. The cache is
   invalidated whenever notes are re-indexed.
-- **Tracing:** set `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY` (create them at
-  http://localhost:3000) to trace every node and LLM call. Without keys, tracing is a no-op.
+- **Tracing:** Langfuse starts with a project and API keys already created (headless init), so every
+  node and LLM call is traced out of the box — sign in at http://localhost:3000 to see them. Clear
+  `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` to turn tracing off; a Langfuse outage never fails a
+  request.
 - **Scraping:** `ScraperSource` in [sources.py](src/vtu_rag/ingestion/sources.py) is the extension point.
   It isn't implemented yet.
 

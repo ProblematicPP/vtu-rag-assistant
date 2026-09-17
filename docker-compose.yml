@@ -198,6 +198,17 @@ services:
       NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:-change-me-nextauth-secret}
       SALT: ${LANGFUSE_SALT:-change-me-salt}
       TELEMETRY_ENABLED: "false"
+      # Headless init: creates the org/project/user on first start so the keys in
+      # .env work immediately. Log in with the e-mail/password below to view traces.
+      LANGFUSE_INIT_ORG_ID: vtu
+      LANGFUSE_INIT_ORG_NAME: VTU
+      LANGFUSE_INIT_PROJECT_ID: vtu-rag
+      LANGFUSE_INIT_PROJECT_NAME: VTU RAG
+      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
+      LANGFUSE_INIT_PROJECT_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
+      LANGFUSE_INIT_USER_EMAIL: ${LANGFUSE_INIT_USER_EMAIL:-admin@example.com}
+      LANGFUSE_INIT_USER_NAME: VTU Admin
+      LANGFUSE_INIT_USER_PASSWORD: ${LANGFUSE_INIT_USER_PASSWORD:-vtu-rag-admin}
     ports:
       - "${LANGFUSE_HOST_PORT:-3000}:3000"
     depends_on:
