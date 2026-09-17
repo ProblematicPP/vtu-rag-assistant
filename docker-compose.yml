@@ -1,0 +1,206 @@
+name: vtu-rag
+
+x-app: &app
+  build:
+    context: .
+    dockerfile: Dockerfile
+  image: vtu-rag:latest
+  env_file: .env
+  volumes:
+    - ./data:/app/data
+  restart: unless-stopped
+
+services:
+  # ---------------------------------------------------------------- storage
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-vtu}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-vtu_password}
+      POSTGRES_DB: ${POSTGRES_DB:-vtu_rag}
+      # Extra databases for Airflow and Langfuse (see docker/postgres/init-databases.sh)
+      EXTRA_DATABASES: airflow,langfuse
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init-databases.sh:/docker-entrypoint-initdb.d/10-init-databases.sh:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-vtu} -d ${POSTGRES_DB:-vtu_rag}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  opensearch:
+    image: opensearchproject/opensearch:2.19.1
+    environment:
+      discovery.type: single-node
+      DISABLE_SECURITY_PLUGIN: "true"
+      DISABLE_INSTALL_DEMO_CONFIG: "true"
+      bootstrap.memory_lock: "true"
+      OPENSEARCH_JAVA_OPTS: -Xms1g -Xmx1g
+    ulimits:
+      memlock: { soft: -1, hard: -1 }
+      nofile: { soft: 65536, hard: 65536 }
+    volumes:
+      - opensearch_data:/usr/share/opensearch/data
+    ports:
+      - "9200:9200"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:9200/_cluster/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+    restart: unless-stopped
+
+  opensearch-dashboards:
+    image: opensearchproject/opensearch-dashboards:2.19.1
+    profiles: ["dashboards"]
+    environment:
+      OPENSEARCH_HOSTS: '["http://opensearch:9200"]'
+      DISABLE_SECURITY_DASHBOARDS_PLUGIN: "true"
+    ports:
+      - "5601:5601"
+    depends_on:
+      opensearch:
+        condition: service_healthy
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  # -------------------------------------------------------------------- LLM
+  ollama:
+    image: ollama/ollama:latest
+    volumes:
+      - ollama_data:/root/.ollama
+    ports:
+      - "11434:11434"
+    # GPU access (requires NVIDIA Container Toolkit / Docker Desktop WSL2 GPU support).
+    # No GPU? Run with: docker compose -f docker-compose.yml -f docker-compose.cpu.yml up --build
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+    restart: unless-stopped
+
+  # One-shot: pulls the configured model into the ollama volume, then exits.
+  ollama-init:
+    image: ollama/ollama:latest
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    entrypoint: ["/bin/sh", "-c", "ollama pull ${OLLAMA_MODEL:-llama3.2:3b}"]
+    depends_on:
+      ollama:
+        condition: service_healthy
+    restart: "no"
+
+  # -------------------------------------------------------------------- app
+  api:
+    <<: *app
+    command: ["uvicorn", "vtu_rag.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      opensearch:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:8000/health/live || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  gradio:
+    <<: *app
+    command: ["python", "-m", "vtu_rag.ui.gradio_app"]
+    ports:
+      - "7860:7860"
+    depends_on:
+      api:
+        condition: service_healthy
+
+  telegram-bot:
+    <<: *app
+    profiles: ["telegram"]
+    command: ["python", "-m", "vtu_rag.bots.telegram_bot"]
+    depends_on:
+      api:
+        condition: service_healthy
+
+  # ---------------------------------------------------------- orchestration
+  airflow:
+    image: apache/airflow:2.10.5-python3.12
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "false"
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER:-vtu}:${POSTGRES_PASSWORD:-vtu_password}@postgres:5432/airflow
+      AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "false"
+      VTU_API_BASE_URL: http://api:8000
+      REINDEX_SCHEDULE: ${REINDEX_SCHEDULE:-*/30 * * * *}
+    command:
+      - bash
+      - -c
+      - |
+        airflow db migrate &&
+        (airflow users create --role Admin --username "${AIRFLOW_ADMIN_USER:-admin}" \
+          --password "${AIRFLOW_ADMIN_PASSWORD:-admin}" --firstname VTU --lastname Admin \
+          --email admin@example.com || true) &&
+        exec airflow standalone
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - airflow_logs:/opt/airflow/logs
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ----------------------------------------------------------- observability
+  langfuse:
+    image: langfuse/langfuse:2
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-vtu}:${POSTGRES_PASSWORD:-vtu_password}@postgres:5432/langfuse
+      NEXTAUTH_URL: http://localhost:3000
+      NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:-change-me-nextauth-secret}
+      SALT: ${LANGFUSE_SALT:-change-me-salt}
+      TELEMETRY_ENABLED: "false"
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  opensearch_data:
+  redis_data:
+  ollama_data:
+  airflow_logs:

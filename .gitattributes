@@ -1,0 +1,4 @@
+* text=auto
+# Shell scripts run inside Linux containers — must keep LF line endings on Windows checkouts
+*.sh text eol=lf
+Dockerfile text eol=lf
