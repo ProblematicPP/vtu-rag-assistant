@@ -16,9 +16,13 @@ build/
 .env.*
 !.env.example
 
-# Notes: keep the folder layout and catalog, not the (possibly copyrighted) PDFs
-data/**/*.pdf
-data/uploads/
+# Notes: only the catalogue, README and the original sample note are tracked.
+# Your own notes/uploads (often third-party material) stay local.
+data/**
+!data/**/
+!data/catalog.yaml
+!data/README.md
+!data/cse/2022/sem3/BCS303/module1-sample.md
 
 # Airflow runtime
 airflow/logs/
