@@ -131,6 +131,8 @@ class Settings(BaseSettings):
     default_branch: str = "cse"
     default_scheme: str = "2022"
     api_base_url: str = "http://localhost:8000"
+    # Index new/changed notes in the background when the API starts
+    sync_on_startup: bool = True
     telegram_bot_token: str = ""
 
     postgres: PostgresSettings = Field(default_factory=PostgresSettings)

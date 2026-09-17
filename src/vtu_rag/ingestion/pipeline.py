@@ -75,6 +75,7 @@ class IngestionService:
     ):
         self.settings = settings
         self.cache = cache
+        self._sync_lock = asyncio.Lock()
         self.db = db
         self.search = search
         self.embeddings = embeddings
@@ -93,12 +94,17 @@ class IngestionService:
         return self.settings.jina.model if self.embeddings.enabled else None
 
     # ------------------------------------------------------------------ batch
+    @property
+    def sync_in_progress(self) -> bool:
+        return self._sync_lock.locked()
+
     async def sync(self, source: NoteSource, force: bool = False) -> SyncReport:
-        catalog = load_catalog(self.data_dir)
-        report = SyncReport()
-        async for discovered in source.discover():
-            report.outcomes.append(await self.ingest(discovered, force=force, catalog=catalog))
-        report.invalid_paths = list(getattr(source, "skipped", []))
+        async with self._sync_lock:
+            catalog = load_catalog(self.data_dir)
+            report = SyncReport()
+            async for discovered in source.discover():
+                report.outcomes.append(await self.ingest(discovered, force=force, catalog=catalog))
+            report.invalid_paths = list(getattr(source, "skipped", []))
         if report.count(IngestStatus.INDEXED):
             await self._invalidate_cache()
         logger.info("Sync finished: %s", report.summary())

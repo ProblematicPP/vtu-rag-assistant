@@ -20,7 +20,6 @@ from vtu_rag.schemas.notes import IngestResult, NoteOut, SyncResponse, UploadRes
 router = APIRouter(prefix="/api/v1/notes", tags=["notes"])
 
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024
-_sync_lock = asyncio.Lock()
 
 
 def _safe_stem(filename: str) -> str:
@@ -125,12 +124,11 @@ async def sync_notes(
     container: ContainerDep,
     force: Annotated[bool, Query(description="Re-index unchanged notes too")] = False,
 ) -> SyncResponse:
-    if _sync_lock.locked():
+    if container.ingestion.sync_in_progress:
         raise HTTPException(409, "A sync is already running")
-    async with _sync_lock:
-        report = await container.ingestion.sync(
-            LocalFolderSource(container.settings.data_dir), force=force
-        )
+    report = await container.ingestion.sync(
+        LocalFolderSource(container.settings.data_dir), force=force
+    )
     return SyncResponse.from_report(report)
 
 

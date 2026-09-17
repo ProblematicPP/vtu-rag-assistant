@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -9,6 +10,7 @@ from vtu_rag import __version__
 from vtu_rag.agent import AgentService
 from vtu_rag.config import get_settings
 from vtu_rag.container import Container
+from vtu_rag.ingestion.sources import LocalFolderSource
 from vtu_rag.logging_config import configure_logging
 from vtu_rag.routers import all_routers
 from vtu_rag.services.embeddings import EmbeddingError
@@ -33,10 +35,23 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         container.llm.model,
         "on" if container.embeddings.enabled else "off",
     )
+    sync_task = None
+    if settings.sync_on_startup:
+        sync_task = asyncio.create_task(_startup_sync(container))
     try:
         yield
     finally:
+        if sync_task is not None and not sync_task.done():
+            sync_task.cancel()
         await container.shutdown()
+
+
+async def _startup_sync(container: Container) -> None:
+    try:
+        report = await container.ingestion.sync(LocalFolderSource(container.settings.data_dir))
+        logger.info("Startup sync: %s", report.summary())
+    except Exception:
+        logger.exception("Startup sync failed")
 
 
 def create_app() -> FastAPI:
