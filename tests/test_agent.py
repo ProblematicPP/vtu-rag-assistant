@@ -39,7 +39,8 @@ def llm_for(
 
 def make_agent(llm, search, max_rewrites: int = 2) -> AgentService:
     settings = AgentSettings(max_rewrites=max_rewrites, guardrail_threshold=50, top_k=5)
-    return AgentService(search, llm, MemoryCache(), Tracer(LangfuseSettings()), settings)
+    tracer = Tracer(LangfuseSettings(public_key="", secret_key=""))
+    return AgentService(search, llm, MemoryCache(), tracer, settings)
 
 
 def nodes(response) -> list[str]:
