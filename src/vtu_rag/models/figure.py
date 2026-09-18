@@ -29,5 +29,7 @@ class Figure(TimestampMixin, Base):
     size_bytes: Mapped[int] = mapped_column(Integer)
     sha256: Mapped[str] = mapped_column(String(64), index=True)
     caption: Mapped[str | None] = mapped_column(String(256))
+    # Words read out of the image itself, used to match a diagram to a question
+    label_text: Mapped[str | None] = mapped_column(String(512))
 
     note: Mapped["Note"] = relationship(back_populates="figures")

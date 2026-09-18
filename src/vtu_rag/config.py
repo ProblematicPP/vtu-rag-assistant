@@ -110,8 +110,11 @@ class FigureSettings(BaseSettings):
     max_per_page: int = 6
     repeat_ratio: float = 0.25
     include_page_scans: bool = True
+    # Read labels inside each diagram so answers can pick the right one
+    read_labels: bool = True
+    label_timeout_seconds: float = 30.0
     # Most diagrams to attach to one answer
-    max_per_answer: int = 4
+    max_per_answer: int = 3
 
 
 class LLMSettings(BaseSettings):

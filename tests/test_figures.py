@@ -10,7 +10,14 @@ from vtu_rag.ingestion.figures import (
     _page_captions,
 )
 from vtu_rag.schemas.ask import Source
-from vtu_rag.services.rag.figures import page_spans, select_figures
+from vtu_rag.services.rag.figures import (
+    _terms,
+    figure_score,
+    generic_terms,
+    page_spans,
+    relevant_sources,
+    select_figures,
+)
 
 CONFIG = FigureConfig()
 
@@ -117,6 +124,7 @@ class FakeFigure:
     width: int = 600
     height: int = 400
     sha256: str = "abc"
+    label_text: str | None = None
     note: FakeNote = None
 
     def __post_init__(self):
@@ -124,14 +132,19 @@ class FakeFigure:
 
 
 class TestSelection:
-    def test_cited_pages_win_when_the_answer_cites(self):
+    def test_every_retrieved_page_is_a_candidate(self):
+        # Scoring decides what is shown, so the pool stays wide
         sources = [source(1, 7, 5, cited=True), source(2, 7, 19, cited=False)]
-        assert page_spans(sources) == [(7, 5, 5)]
+        assert page_spans(sources) == [(7, 5, 5), (7, 19, 19)]
+
+    def test_cited_passages_lead_the_fallback_ordering(self):
+        sources = [source(1, 7, 5, cited=False), source(2, 7, 19, cited=True)]
+        assert [s.index for s in relevant_sources(sources)] == [2]
 
     def test_uncited_answers_fall_back_to_the_top_passages(self):
-        # Small models sometimes skip [n] markers; diagrams should still show
+        # Small models often skip [n] markers; diagrams should still show
         sources = [source(i, 7, i * 3, cited=False) for i in range(1, 6)]
-        assert page_spans(sources, fallback=2) == [(7, 3, 3), (7, 6, 6)]
+        assert [s.index for s in relevant_sources(sources, fallback=2)] == [1, 2]
 
     def test_sources_without_pages_are_skipped(self):
         markdown_note = source(1, 7, 5, cited=True).model_copy(
@@ -164,3 +177,125 @@ class TestSelection:
 
     def test_no_figures_means_no_output(self):
         assert select_figures([], [source(1, 7, 5, cited=True)], limit=4) == []
+
+
+class TestRelevanceToTheQuestion:
+    """The reported bug: a dual-mode question also showed a multiprocessing diagram.
+
+    Both sit on page 10 of BCS303 module 1, so page proximity cannot separate
+    them — but what is printed inside each diagram can.
+    """
+
+    QUESTION = "Define operating systems. Explain the dual-mode operation with a neat diagram."
+    DUAL_MODE = FakeFigure(
+        id=1, note_id=34, page=10, sha256="dual", label_text="user process kernel mode bit trap"
+    )
+    MULTIPROCESSING = FakeFigure(
+        id=2, note_id=34, page=10, index=1, sha256="multi", label_text="CPU GPU memory"
+    )
+
+    def test_only_the_matching_diagram_is_shown(self):
+        sources = [source(1, 34, 10, cited=False)]
+        picked = select_figures(
+            [self.MULTIPROCESSING, self.DUAL_MODE], sources, limit=3, question=self.QUESTION
+        )
+        assert [f.id for f in picked] == [1]
+
+    def test_exam_phrasing_does_not_match_everything(self):
+        """ "neat diagram" appears in most VTU questions; it must not score."""
+        assert figure_score(self.MULTIPROCESSING, _terms(self.QUESTION)) == 0.0
+
+    def test_a_caption_counts_as_well_as_labels(self):
+        captioned = FakeFigure(
+            id=3, note_id=34, page=10, sha256="cap", caption="Fig 1.5 Dual-mode operation"
+        )
+        picked = select_figures([captioned], [source(1, 34, 10, False)], 3, question=self.QUESTION)
+        assert [f.id for f in picked] == [3]
+
+    def test_unreadable_diagrams_fall_back_to_page_ranking(self):
+        blank_a = FakeFigure(id=4, note_id=34, page=10, sha256="a")
+        blank_b = FakeFigure(id=5, note_id=34, page=19, sha256="b")
+        sources = [source(1, 34, 19, cited=True), source(2, 34, 10, cited=True)]
+        picked = select_figures([blank_a, blank_b], sources, limit=3, question=self.QUESTION)
+        # no labels anywhere, so the top-ranked passage's page wins
+        assert [f.id for f in picked] == [5, 4]
+
+    def test_a_question_of_only_filler_words_falls_back(self):
+        picked = select_figures(
+            [self.DUAL_MODE], [source(1, 34, 10, False)], 3, question="Explain with a neat diagram"
+        )
+        assert [f.id for f in picked] == [1]
+
+
+class TestNoGuessing:
+    """A wrong diagram gets copied into an exam answer — silence is better."""
+
+    def test_readable_but_unrelated_diagrams_are_dropped(self):
+        unrelated = FakeFigure(id=9, note_id=34, page=10, sha256="u", label_text="CPU GPU memory")
+        picked = select_figures(
+            [unrelated], [source(1, 34, 10, cited=False)], 3, question="Explain paging hardware"
+        )
+        assert picked == []
+
+    def test_candidate_pages_cover_every_retrieved_passage(self):
+        # The explanation may be on page 10 while its figure sits on page 11
+        sources = [source(1, 34, 10, cited=False), source(2, 34, 11, cited=False)]
+        assert page_spans(sources) == [(34, 10, 10), (34, 11, 11)]
+
+
+class TestGenericSubjectWords:
+    def test_the_subject_name_does_not_score(self):
+        """Every diagram in BCS303 is "about operating systems"."""
+        assert generic_terms([source(1, 34, 9, cited=False)]) >= {"operating", "systems", "bcs303"}
+
+    def test_generic_matches_do_not_crowd_out_the_real_topic(self):
+        question = "Define operating systems. Explain dual-mode operation with a neat diagram."
+        sources = [source(i, 34, 9 + i, cited=False) for i in range(1, 4)]
+        dual_mode = FakeFigure(id=1, note_id=34, page=11, sha256="d", label_text="mode bit kernel")
+        generic_a = FakeFigure(id=2, note_id=34, page=10, sha256="a", label_text="operating system")
+        generic_b = FakeFigure(id=3, note_id=34, page=12, sha256="b", label_text="system programs")
+
+        picked = select_figures([generic_a, dual_mode, generic_b], sources, 3, question=question)
+        assert [f.id for f in picked] == [1]
+
+    def test_plurals_fold(self):
+        assert "process" in _terms("processes")
+
+
+class TestPassageFallback:
+    """Diagrams seldom name their own topic: an SMP figure just says "CPU cache"."""
+
+    QUESTION = "Explain symmetric multiprocessing with a diagram"
+    SMP = FakeFigure(
+        id=1, note_id=34, page=8, sha256="smp", label_text="CPU registers cache memory"
+    )
+    UNRELATED = FakeFigure(id=2, note_id=34, page=20, sha256="x", label_text="disk USB monitor")
+    PASSAGES = [
+        (34, 8, 8, "In symmetric multiprocessing each processor runs an identical copy of the OS."),
+        (34, 20, 20, "A device controller maintains local buffer storage for its peripheral."),
+    ]
+
+    def test_the_surrounding_passage_rescues_the_right_diagram(self):
+        sources = [source(1, 34, 8, cited=False), source(2, 34, 20, cited=False)]
+        picked = select_figures(
+            [self.UNRELATED, self.SMP], sources, 3, question=self.QUESTION, passages=self.PASSAGES
+        )
+        assert [f.id for f in picked] == [1]
+
+    def test_labels_still_win_over_the_passage(self):
+        """The dual-mode case: the page's passage must not resurrect the wrong figure."""
+        question = "Explain dual-mode operation with a neat diagram"
+        dual = FakeFigure(id=3, note_id=34, page=11, sha256="d", label_text="mode bit kernel user")
+        wrong = FakeFigure(id=4, note_id=34, page=10, sha256="w", label_text="CPU GPU memory")
+        passages = [(34, 10, 11, "The mode bit distinguishes kernel mode from user mode.")]
+        sources = [source(1, 34, 10, cited=False), source(2, 34, 11, cited=False)]
+
+        picked = select_figures([wrong, dual], sources, 3, question=question, passages=passages)
+        assert [f.id for f in picked] == [3]
+
+    def test_still_nothing_when_neither_matches(self):
+        sources = [source(1, 34, 20, cited=False)]
+        picked = select_figures(
+            [self.UNRELATED], sources, 3, question="Explain paging", passages=self.PASSAGES
+        )
+        assert picked == []

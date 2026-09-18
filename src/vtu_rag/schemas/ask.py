@@ -86,6 +86,7 @@ class FigureOut(BaseModel):
     page: int
     kind: str
     caption: str | None
+    label_text: str | None = None
     width: int
     height: int
 
@@ -101,6 +102,7 @@ class FigureOut(BaseModel):
             page=figure.page,
             kind=figure.kind,
             caption=figure.caption,
+            label_text=figure.label_text,
             width=figure.width,
             height=figure.height,
         )

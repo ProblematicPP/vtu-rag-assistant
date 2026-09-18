@@ -354,6 +354,7 @@ class IngestionService:
                     size_bytes=figure.size_bytes,
                     sha256=figure.sha256,
                     caption=figure.caption[:256] if figure.caption else None,
+                    label_text=figure.label_text[:512] if figure.label_text else None,
                 )
             )
         await repo.replace_for_note(note_id, rows)
