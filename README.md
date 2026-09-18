@@ -1,128 +1,299 @@
-# VTU RAG Assistant
+# 📘 VTU RAG Assistant
 
-An agentic retrieval-augmented generation (RAG) assistant for **VTU (Visvesvaraya Technological University)**
-engineering students. Put your module notes in a folder, and it answers exam questions using only those
-notes, citing the **subject → module → note (→ page)** each answer came from.
+**Ask your VTU notes a question, get an exam-ready answer — with the source PDF and its diagrams.**
 
-Everything runs locally with Docker Compose: the LLM runs on your GPU through Ollama.
+An agentic retrieval-augmented generation (RAG) system for students of **Visvesvaraya Technological
+University**. Drop your module notes into a folder; the system parses them (OCR'ing scanned
+photocopies), indexes them for hybrid keyword + semantic search, and answers questions using *only*
+what your notes actually say — then links the source PDF at the page it used and shows the diagrams
+from that page, because VTU answers usually want one drawn.
 
+Everything runs on your own machine: `docker compose up --build`, with the LLM on your GPU via Ollama.
+No API keys are required to get started.
+
+---
+
+## What an answer looks like
+
+> **Q: Explain the memory layout for a multiprogramming system**
+>
+> **Definition:** A memory layout where multiple jobs are kept in memory simultaneously, increasing CPU
+> utilisation by organising jobs so the CPU always has one to execute.
+>
+> - The operating system keeps several jobs in memory as a subset of the job pool…
+>
+> **Diagrams from these notes**
+> *Fig - Memory layout for a multiprogramming system — BCS303 · Module 1 · p. 9*
+>
+> **From your notes**
+> - [BCS303 Operating Systems · Module 1 — module1](#) — pages 9, 10, 14
+
+The answer is grounded in retrieved excerpts, the diagram comes from the same page, and the link opens
+the original PDF at page 9.
+
+---
+
+## Contents
+
+- [How it works](#how-it-works) · [Quick start](#quick-start) · [Adding your notes](#adding-your-notes)
+- [Ingestion in detail](#ingestion-in-detail) · [Retrieval](#retrieval) · [The agent](#the-agent)
+- [API](#api) · [Configuration](#configuration) · [Development](#development)
+
+---
+
+## How it works
+
+```mermaid
+flowchart LR
+    subgraph Clients
+        G[Gradio chat UI]
+        T[Telegram bot<br/><i>optional</i>]
+    end
+
+    subgraph API["FastAPI"]
+        ASK["/ask<br/>quick answer"]
+        AGENT["/agentic-ask<br/>LangGraph agent"]
+        NOTES["/notes, /notes/sync<br/>ingestion"]
+        FILES["/notes/id/file, /figures/id<br/>PDFs and diagrams"]
+    end
+
+    subgraph Stores
+        PG[(PostgreSQL<br/>syllabus + notes<br/>+ chunks + figures)]
+        OS[(OpenSearch<br/>BM25 + k-NN vectors)]
+        RD[(Redis<br/>answer cache)]
+        FS[/data folder<br/>PDFs, figures, OCR cache/]
+    end
+
+    subgraph Models
+        OL[Ollama<br/>local GPU LLM]
+        JI[Jina AI<br/>embeddings]
+    end
+
+    G --> ASK & AGENT & FILES
+    T --> AGENT
+    ASK & AGENT --> OS
+    ASK & AGENT --> RD
+    ASK & AGENT --> OL
+    NOTES --> PG & OS & FS
+    NOTES --> JI
+    FILES --> FS
+    AIR[Airflow DAG<br/>every 30 min] --> NOTES
+    LF[Langfuse<br/>tracing] -.-> ASK & AGENT
 ```
-┌──────────┐   ┌──────────────────────────── FastAPI ─────────────────────────────┐
-│  Gradio  │──▶│ /ask ──────────────▶ hybrid search ─▶ answer with [n] citations  │
-│ Telegram │   │ /agentic-ask ─▶ LangGraph:                                        │
-└──────────┘   │   guardrail ─▶ retrieve ─▶ grade ─┬─▶ generate                    │
-               │                  ▲                └─▶ rewrite query ─┐            │
-               │                  └───────────────────────────────────┘            │
-               │ /notes, /notes/sync ─▶ parse ─▶ section chunks ─▶ Jina embed ─▶ index │
-               └──────┬────────────┬──────────────┬─────────────┬─────────────┬─────┘
-                  PostgreSQL   OpenSearch       Redis        Ollama       Langfuse
-                  (metadata)  (BM25 + k-NN)    (cache)     (GPU LLM)    (tracing, optional)
-                                   ▲
-                 Airflow DAG ──────┘  scheduled re-index of new/changed notes
-```
+
+Three things happen: **notes go in** (ingestion), **a question comes in** (retrieval), and **an answer
+comes out** (generation, with sources and diagrams).
+
+---
 
 ## Quick start
 
-Prerequisites: Docker Desktop (with WSL2 GPU support on Windows) or Docker Engine plus the
-[NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/),
-and about 12 GB of free RAM for the full stack.
+**Prerequisites:** Docker Desktop (WSL2 GPU support on Windows) or Docker Engine plus the
+[NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/), and
+roughly 12 GB of free RAM for the full stack.
 
 ```bash
-cp .env.example .env          # optional: add JINA_API_KEY for hybrid (vector) search
+git clone https://github.com/ProblematicPP/vtu-rag-assistant.git
+cd vtu-rag-assistant
+cp .env.example .env
 docker compose up --build
 ```
 
-On the first start, `ollama-init` downloads the model (`llama3.2:3b`, about 2 GB). The API indexes
-everything under `data/` in the background as it starts (`SYNC_ON_STARTUP`), which includes the sample
-note, so you can ask questions right away.
+First start downloads the LLM (`llama3.2:3b`, about 2 GB) and boots eight services. When the API
+reports healthy, open **<http://localhost:7860>**.
 
-| Service | URL |
-|---|---|
-| Chat UI (Gradio) | http://localhost:7860 |
-| API docs (Swagger) | http://localhost:8000/docs |
-| Health | http://localhost:8000/health |
-| Airflow (`admin` / `admin`) | http://localhost:8080 |
-| Langfuse (`admin@example.com` / `vtu-rag-admin`) | http://localhost:3000 |
-| OpenSearch | http://localhost:9200 |
+| Service | URL | Notes |
+|---|---|---|
+| **Chat UI** (Gradio) | <http://localhost:7860> | ask questions here |
+| API docs (Swagger) | <http://localhost:8000/docs> | every endpoint, try-it-out |
+| Health | <http://localhost:8000/health> | per-service status |
+| Airflow | <http://localhost:8080> | `admin` / `admin` |
+| Langfuse | <http://localhost:3000> | `admin@example.com` / `vtu-rag-admin` |
+| OpenSearch | <http://localhost:9200> | raw index |
 
-**No NVIDIA GPU?** Use `docker compose -f docker-compose.yml -f docker-compose.cpu.yml up --build`.
+<details>
+<summary><b>No NVIDIA GPU?</b></summary>
 
-**Answer quality.** The default `llama3.2:3b` fits in 6 GB of VRAM and answers in a few seconds (the
-first request after startup is slower while the model loads). Being small, it sometimes adds detail
-that isn't in your notes, even though the prompt forbids it — always check answers against the cited
-excerpt. With more VRAM, set `OLLAMA_MODEL=qwen2.5:7b-instruct` (or another larger model) in `.env`
-for noticeably better grounding, then run `docker compose run --rm ollama-init`.
+```bash
+docker compose -f docker-compose.yml -f docker-compose.cpu.yml up --build
+```
+Answers then take tens of seconds instead of a few.
+</details>
 
-**Port already in use?** Every host port is configurable in `.env` (`API_HOST_PORT`, `REDIS_HOST_PORT`, and so on).
+<details>
+<summary><b>Port already in use?</b></summary>
 
-## Adding notes
+Every host port is configurable in `.env` — `API_HOST_PORT`, `GRADIO_HOST_PORT`, `POSTGRES_HOST_PORT`,
+`OPENSEARCH_HOST_PORT`, `REDIS_HOST_PORT`, `AIRFLOW_HOST_PORT`, `LANGFUSE_HOST_PORT`.
+</details>
 
-Put files under `data/` using this layout (see [data/README.md](data/README.md)):
+<details>
+<summary><b>Better answers</b></summary>
+
+The default `llama3.2:3b` fits in 6 GB of VRAM and replies in a few seconds, but being small it
+sometimes adds detail that isn't in your notes. With more VRAM set `OLLAMA_MODEL=qwen2.5:7b-instruct`
+in `.env`, then `docker compose run --rm ollama-init`.
+
+Add a free [Jina AI key](https://jina.ai/embeddings) as `JINA_API_KEY` to turn on semantic search;
+without it retrieval is keyword-only (see [Retrieval](#retrieval)).
+</details>
+
+---
+
+## Adding your notes
+
+Files go under `data/`, and the folder path is what tags each note:
 
 ```
 data/<branch>/<scheme>/sem<N>/<SUBJECT_CODE>/module<N>[-anything].<pdf|md|txt>
-data/cse/2022/sem3/BCS303/module2.pdf
+
+data/cse/2022/sem3/BCS303/module1.pdf
+data/cse/2022/sem3/BCS303/module2-process-management.pdf
+data/cse/2022/sem4/BCS403/module1.pdf
 ```
 
-Then index them in any of these ways:
+Then index them — any one of:
 
-- CLI: `docker compose exec api python scripts/ingest.py` (add `--force` to re-index everything)
-- API: `POST /api/v1/notes/sync`
-- Airflow: the `reindex_vtu_notes` DAG runs every 30 minutes (`REINDEX_SCHEDULE`)
-- Upload: `POST /api/v1/notes` (multipart) stores the file in the right folder and indexes it:
+```bash
+docker compose exec api python scripts/ingest.py      # CLI (--force to re-index everything)
+curl -X POST localhost:8000/api/v1/notes/sync         # API
+```
+
+…or upload a single file, which is filed into the right folder for you:
 
 ```bash
 curl -F file=@os-module2.pdf -F subject_code=BCS303 -F module_number=2 \
      http://localhost:8000/api/v1/notes
 ```
 
-Unchanged notes are skipped by content hash. If you add a `JINA_API_KEY` later, notes that were indexed as
-BM25-only get embedded on the next sync.
+…or just wait: the **Airflow DAG** re-indexes every 30 minutes, and the API syncs on startup.
 
-### Scanned notes
+Subject names and module titles come from [`data/catalog.yaml`](data/catalog.yaml), seeded for the
+**CSE 2022 scheme** — check it against the official syllabus and extend it for your branch. Unknown
+subject codes still work; they just show their code as the name.
 
-Most VTU notes in circulation are photocopies scanned to PDF — pages of images with no text to extract.
-Those are handled automatically: when too many pages come back near-empty, the file goes through
-[ocrmypdf](https://ocrmypdf.readthedocs.io) (Tesseract) to gain a text layer, and the result is parsed
-instead. A junk text layer triggers a second pass with `--force-ocr`.
+---
 
-- OCR runs at roughly 1–3 seconds per page, so the first ingest of a scanned module takes a while;
-  bulk-load via `scripts/ingest.py` or the Airflow DAG rather than waiting on an HTTP upload.
-- Results are cached in `data/.ocr-cache`, keyed by file content — re-indexing never re-runs OCR.
-- The response from `/api/v1/notes` reports `"ocr": true` when a text layer had to be created.
-- Tune with the `OCR_*` settings in `.env`; other languages need the matching Tesseract pack added to
-  the Dockerfile (e.g. `tesseract-ocr-kan` for Kannada, then `OCR_LANGUAGE=eng+kan`).
+## Ingestion in detail
 
-### Diagrams
+```mermaid
+flowchart TD
+    A[File in data/] --> B{Path matches<br/>branch/scheme/sem/subject?}
+    B -->|no| B1[Skipped, reported<br/>as invalid path]
+    B -->|yes| C{Changed since<br/>last index?}
+    C -->|no| C1[Skipped by content hash]
+    C -->|yes| D[Parse PDF text<br/>pypdf]
+    D --> E{Too many pages<br/>near-empty?}
+    E -->|yes: scanned| F[OCR with ocrmypdf<br/>skip-text, then force-ocr<br/>cached by content]
+    E -->|no| G
+    F --> G[Strip running<br/>headers and footers]
+    G --> H[Section-aware chunking<br/>~350 words, 60 overlap]
+    G --> I[Extract diagrams<br/>filter logos and rules]
+    H --> J[Embed chunks<br/>Jina API]
+    J --> K[(Index in OpenSearch)]
+    H --> L[(Chunks in PostgreSQL)]
+    I --> M[(Figures on disk<br/>+ rows in PostgreSQL)]
+```
 
-VTU answers usually want a diagram, so the figures in a note are extracted alongside its text:
-every embedded image is pulled out at ingest, logos/rules/watermarks are filtered away, captions
-like "Fig. 1.2 Layered operating system" are picked up from the page, and the images are stored
-under `data/derived/figures`.
+**Scanned notes.** Most VTU notes in circulation are photocopies: pages of images with no text layer.
+When too many pages come back near-empty, the PDF is run through
+[ocrmypdf](https://ocrmypdf.readthedocs.io) (Tesseract) to gain one. A junk text layer triggers a second
+pass with `--force-ocr`. OCR costs 1–3 s per page, so results are cached in `data/.ocr-cache` keyed by
+file content — re-indexing never pays twice. For other languages add the Tesseract pack to the
+Dockerfile (`tesseract-ocr-kan`) and set `OCR_LANGUAGE=eng+kan`.
 
-An answer carries the diagrams that sit on the pages it drew from (`figures` in the response,
-rendered inline in the chat UI). `GET /api/v1/notes/{id}/figures` lists a note's diagrams and
-`GET /api/v1/figures/{id}` serves one. For scanned notes the page image itself is kept, since
-that is where the diagram is. Tune with the `FIGURES_*` settings.
+**Running headers and footers.** Lines like *"Karthikeyan S M, Asst. Professor, Dept. of CSE, SVIT"*
+repeat on every page; left in they waste context and get mistaken for section headings. Lines appearing
+on ≥60% of pages (short ones only, page numbers normalised away) are removed before chunking.
 
-Subject names and module titles come from [data/catalog.yaml](data/catalog.yaml), which is seeded for the
-**CSE 2022 scheme**. Check it against the official VTU syllabus and extend it for your branch.
+**Section-aware chunking.** Notes are split at detected headings — markdown `#`, numbered `2.3 Paging`,
+`MODULE 2`, short ALL-CAPS lines — then each section is packed into ~350-word chunks with a 60-word
+overlap. Chunks keep their heading path (`Module 1 > 1.3 Dual-Mode Operation`) and page range, which is
+what makes page-accurate source links possible. Tiny sections merge into the next.
+
+**Diagrams.** Every embedded image is extracted; logos and watermarks (the same image recurring across
+pages), bullet icons and horizontal rules are filtered out, and captions like *"Fig. 1.2 Layered
+operating system"* are picked up from the page text. For scanned notes the page image itself is kept.
+
+**Housekeeping.** Notes are skipped when unchanged (content hash), re-embedded when you add an
+embeddings key later, and pruned from the index when you delete the file.
+
+---
+
+## Retrieval
+
+Each chunk is indexed twice: as **text** for BM25 keyword scoring, and as a **1024-dimension vector**
+(Jina `jina-embeddings-v3`) for semantic similarity in a Lucene HNSW k-NN field.
+
+```mermaid
+flowchart LR
+    Q[Question] --> BM[BM25 leg<br/>exact words]
+    Q --> VE[Vector leg<br/>meaning]
+    BM --> N[min-max normalise<br/>combine 0.3 / 0.7]
+    VE --> N
+    N --> R[Ranked chunks]
+    F[Filters: branch, scheme,<br/>semester, subject, module] -.-> BM & VE
+```
+
+Keyword search alone misses paraphrases — *"deadlock avoidance"* won't match *"the Banker's algorithm
+keeps the system in a safe state"*. Vector search alone misses exact terms like subject codes. Hybrid
+runs both and merges the rankings through an OpenSearch normalisation pipeline. **Without
+`JINA_API_KEY` the vector leg is skipped and search runs BM25-only** — it works, just less forgiving of
+paraphrase.
+
+---
+
+## The agent
+
+`/ask` does one retrieval and one generation. `/agentic-ask` adds a LangGraph loop that checks itself:
+
+```mermaid
+stateDiagram-v2
+    [*] --> Guardrail
+    Guardrail --> OutOfScope: off-syllabus
+    Guardrail --> Retrieve: in scope
+    Retrieve --> Grade
+    Grade --> Generate: relevant excerpts found
+    Grade --> Rewrite: nothing relevant,<br/>attempts left
+    Grade --> NotFound: nothing relevant,<br/>out of attempts
+    Rewrite --> Retrieve
+    Generate --> [*]
+    OutOfScope --> [*]
+    NotFound --> [*]
+```
+
+- **Guardrail** — scores whether the question belongs to the VTU syllabus scope. *"Best biryani in
+  Bangalore"* is declined in under a second, without touching the index. If the classifier itself
+  fails, the question is allowed through rather than wrongly blocked.
+- **Grade** — the model marks which retrieved excerpts actually bear on the question.
+- **Rewrite** — when nothing is relevant, the query is rewritten (up to `AGENT_MAX_REWRITES`) and
+  retrieval runs again.
+- **Generate** — answers from the excerpts only, and says so plainly when the notes don't cover it.
+  Answers carry no citation markers; the source notes are linked whole instead.
+
+Every step is traced to **Langfuse** and returned in the response as a `steps` log, so you can see
+exactly why an answer came out the way it did.
+
+---
 
 ## API
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/health` | Status of Postgres, OpenSearch, Redis, LLM, embeddings, Langfuse |
-| GET | `/api/v1/subjects?branch=&scheme=&semester=` | List subjects |
-| GET | `/api/v1/subjects/{code}/modules` | Modules, with note and indexed-note counts |
-| POST | `/api/v1/notes` | Upload and index a note |
-| POST | `/api/v1/notes/sync?force=` | Index new or changed notes from `data/` |
-| GET/DELETE | `/api/v1/notes`, `/api/v1/notes/{id}` | Inspect or remove notes |
-| POST | `/api/v1/search` | Hybrid, BM25 or vector search over chunks |
-| POST | `/api/v1/ask` | Quick answer: one retrieval, then generation |
-| POST | `/api/v1/agentic-ask` | LangGraph agent with guardrail, grading and query rewriting |
+| `GET` | `/health` | Status of Postgres, OpenSearch, Redis, LLM, embeddings, Langfuse |
+| `GET` | `/api/v1/subjects` | List subjects (`branch`, `scheme`, `semester` filters) |
+| `GET` | `/api/v1/subjects/{code}/modules` | Modules with note counts |
+| `POST` | `/api/v1/notes` | Upload and index a note |
+| `POST` | `/api/v1/notes/sync` | Index new/changed notes from `data/` (`?force=true`) |
+| `GET` | `/api/v1/notes`, `/api/v1/notes/{id}` | Inspect notes and their status |
+| `GET` | `/api/v1/notes/{id}/file` | **Open the original PDF** (supports `#page=N`) |
+| `GET` | `/api/v1/notes/{id}/figures` | Diagrams extracted from a note |
+| `GET` | `/api/v1/figures/{id}` | Fetch one diagram image |
+| `POST` | `/api/v1/search` | Hybrid / BM25 / vector search over chunks |
+| `POST` | `/api/v1/ask` | Quick answer |
+| `POST` | `/api/v1/agentic-ask` | Full agent run |
 
-Search, ask and agentic-ask all accept the filters `branch`, `scheme`, `semester`, `subject_code` and
+Search and both ask endpoints accept the same filters: `branch`, `scheme`, `semester`, `subject_code`,
 `module_numbers`.
 
 ```bash
@@ -130,77 +301,124 @@ curl -X POST localhost:8000/api/v1/agentic-ask -H 'content-type: application/jso
   -d '{"question": "Explain dual-mode operation", "subject_code": "BCS303"}'
 ```
 
-The response includes the answer, numbered `sources` (with a `cited` flag), the guardrail verdict, any
-rewritten queries, and a step-by-step `steps` log of the agent's run.
+The response carries the `answer`, the source `notes` (each with its PDF URL and the pages used), the
+`figures` to draw, the retrieved `sources`, the guardrail verdict, any rewritten queries, and the
+agent's `steps`.
 
-## How it works
+---
 
-- **Chunking** ([chunker.py](src/vtu_rag/ingestion/chunker.py)): splits notes at detected headings
-  (markdown `#`, `2.3 Paging`, `MODULE 2`, short ALL-CAPS lines), then packs each section into chunks of
-  about 350 words with a 60-word overlap. Chunks keep their heading path (`Module 1 > 1.3 Dual-Mode
-  Operation`) and page range. Very small sections are merged into the next one.
-- **Search** ([search/](src/vtu_rag/services/search/)): OpenSearch `hybrid` query (BM25 plus Lucene HNSW
-  k-NN) with a min-max normalisation pipeline (weights 0.3 / 0.7). Filters apply to both halves of the
-  query. Search automatically falls back to BM25 when embeddings are unavailable.
-- **Agent** ([agent/graph.py](src/vtu_rag/agent/graph.py)):
-  - The guardrail scores whether the question is in scope. If the classifier fails, the question is
-    allowed through.
-  - The grader picks the relevant excerpts. When none are relevant, the question is rewritten and
-    retrieved again, up to `AGENT_MAX_REWRITES` times.
-  - Generation must cite `[n]` and must say so when the notes don't contain the answer.
-- **LLM** ([services/llm/](src/vtu_rag/services/llm/)): a `LLMProvider` interface with an Ollama provider
-  (the default) and an OpenAI-compatible provider. To use Groq or Together, set `LLM_PROVIDER=groq`,
-  `LLM_API_KEY` and `LLM_API_MODEL`.
-- **Caching:** answers are cached in Redis, keyed by question, filters and model. The cache is
-  invalidated whenever notes are re-indexed.
-- **Tracing:** Langfuse starts with a project and API keys already created (headless init), so every
-  node and LLM call is traced out of the box — sign in at http://localhost:3000 to see them. Clear
-  `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` to turn tracing off; a Langfuse outage never fails a
-  request.
-- **Scraping:** `ScraperSource` in [sources.py](src/vtu_rag/ingestion/sources.py) is the extension point.
-  It isn't implemented yet.
+## Configuration
 
-## Optional pieces
+All settings live in `.env` ([`.env.example`](.env.example) documents every key).
+
+| Group | Keys | What they control |
+|---|---|---|
+| LLM | `LLM_PROVIDER`, `OLLAMA_MODEL`, `LLM_TEMPERATURE` | Ollama by default; Groq/Together via `LLM_PROVIDER=groq` + `LLM_API_KEY` |
+| Embeddings | `JINA_API_KEY`, `JINA_MODEL` | Semantic half of hybrid search |
+| Chunking | `CHUNK_TARGET_WORDS`, `CHUNK_OVERLAP_WORDS` | Chunk size and overlap |
+| OCR | `OCR_ENABLED`, `OCR_LANGUAGE`, `OCR_MIN_WORDS_PER_PAGE` | Scanned-note handling |
+| Diagrams | `FIGURES_ENABLED`, `FIGURES_MIN_WIDTH`, `FIGURES_MAX_PER_ANSWER` | What counts as a diagram |
+| Agent | `AGENT_MAX_REWRITES`, `AGENT_GUARDRAIL_THRESHOLD`, `AGENT_TOP_K` | Agent behaviour |
+| Cache | `CACHE_ENABLED`, `CACHE_TTL_SECONDS` | Redis answer cache |
+| Tracing | `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY` | Blank them to disable tracing |
+
+**Swapping the LLM provider.** `LLMProvider` ([services/llm/](src/vtu_rag/services/llm/)) is an
+interface with two implementations: Ollama (default) and an OpenAI-compatible client that covers Groq,
+Together and anything else speaking that protocol. Nothing else in the codebase knows which is in use.
+
+---
+
+## Optional services
 
 ```bash
-docker compose --profile telegram up -d telegram-bot     # needs TELEGRAM_BOT_TOKEN
-docker compose --profile dashboards up -d                # OpenSearch Dashboards on :5601
+docker compose --profile telegram up -d telegram-bot   # needs TELEGRAM_BOT_TOKEN
+docker compose --profile dashboards up -d              # OpenSearch Dashboards on :5601
 ```
+
+---
 
 ## Development
 
 ```bash
-uv sync                       # Python 3.11–3.13
-uv run pytest                 # unit tests (no services needed)
+uv sync                          # Python 3.11–3.13
+uv run pytest                    # ~96 unit tests, no services needed
 uv run ruff check src tests
 
-# Run the API on the host against the compose services
+# API on the host against the compose services
 docker compose up -d postgres opensearch redis ollama
 POSTGRES_HOST=localhost OPENSEARCH_HOST=http://localhost:9200 REDIS_HOST=localhost \
 OLLAMA_HOST=http://localhost:11434 DATA_DIR=data uv run uvicorn vtu_rag.main:app --reload
 ```
 
-Layout:
-
 ```
 src/vtu_rag/
-  config.py          settings (env-driven)          container.py   service wiring
-  models/            Subject, Module, Note, Chunk   repositories/  DB access
-  ingestion/         path parser, parsers, chunker, sources, pipeline
-  services/          embeddings, search, llm, rag, cache, tracing
+  config.py          env-driven settings            container.py   service wiring
+  models/            Subject → Module → Note → Chunk, Figure
+  repositories/      database access
+  ingestion/         path parser, parsers, OCR, chunker, figures, pipeline, sources
+  services/          embeddings, search, llm, rag, cache, tracing, figure store
   agent/             LangGraph state, graph, service
   routers/           FastAPI endpoints              schemas/       request/response models
   ui/                Gradio app                     bots/          Telegram bot
-airflow/dags/        re-index DAG
+airflow/dags/        scheduled re-index DAG
 scripts/ingest.py    ingestion CLI
+tests/               unit tests for chunking, parsing, OCR, figures, search, agent routing
 ```
+
+The data model mirrors the syllabus:
+
+```mermaid
+erDiagram
+    SUBJECT ||--o{ MODULE : has
+    MODULE ||--o{ NOTE : has
+    NOTE ||--o{ CHUNK : "split into"
+    NOTE ||--o{ FIGURE : "diagrams from"
+    SUBJECT {
+        string code "BCS303"
+        string name "Operating Systems"
+        string branch "cse"
+        string scheme "2022"
+        int semester
+    }
+    MODULE {
+        int number
+        string title
+    }
+    NOTE {
+        string source_uri "path under data/"
+        string source_type "upload or scraped"
+        string content_hash
+        string status "pending, indexed, failed"
+        string embedding_model
+    }
+    CHUNK {
+        string section_heading
+        int page_start
+        int page_end
+        string opensearch_doc_id
+    }
+    FIGURE {
+        int page
+        string kind "figure or page scan"
+        string caption
+        string path
+    }
+```
+
+**Extension point for scraping:** `ScraperSource` in
+[ingestion/sources.py](src/vtu_rag/ingestion/sources.py) implements the same `NoteSource` interface as
+the local folder reader — fill in `discover()` to pull notes from a public VTU resource site, and the
+rest of the pipeline works unchanged.
+
+---
 
 ## Acknowledgements
 
-The architecture was inspired by studying the open-source
+Architecture inspired by studying the open-source
 [production-agentic-rag-course](https://github.com/jamwithai/production-agentic-rag-course) (MIT). This
-project is an independent implementation for a different domain.
+is an independent implementation for a different domain, with its own data model, ingestion pipeline
+and features.
 
 ## License
 
-MIT
+[MIT](LICENSE)
