@@ -262,40 +262,38 @@ class TestGenericSubjectWords:
         assert "process" in _terms("processes")
 
 
-class TestPassageFallback:
-    """Diagrams seldom name their own topic: an SMP figure just says "CPU cache"."""
+class TestAnswerVocabulary:
+    """Diagrams seldom name their topic: an SMP figure just says "CPU cache"."""
 
     QUESTION = "Explain symmetric multiprocessing with a diagram"
+    ANSWER = (
+        "In symmetric multiprocessing each processor has its own registers and private cache, "
+        "and all processors share physical memory."
+    )
     SMP = FakeFigure(
         id=1, note_id=34, page=8, sha256="smp", label_text="CPU registers cache memory"
     )
     UNRELATED = FakeFigure(id=2, note_id=34, page=20, sha256="x", label_text="disk USB monitor")
-    PASSAGES = [
-        (34, 8, 8, "In symmetric multiprocessing each processor runs an identical copy of the OS."),
-        (34, 20, 20, "A device controller maintains local buffer storage for its peripheral."),
-    ]
 
-    def test_the_surrounding_passage_rescues_the_right_diagram(self):
+    def test_the_answer_vocabulary_finds_the_right_diagram(self):
         sources = [source(1, 34, 8, cited=False), source(2, 34, 20, cited=False)]
         picked = select_figures(
-            [self.UNRELATED, self.SMP], sources, 3, question=self.QUESTION, passages=self.PASSAGES
+            [self.UNRELATED, self.SMP], sources, 3, question=self.QUESTION, answer=self.ANSWER
         )
         assert [f.id for f in picked] == [1]
 
-    def test_labels_still_win_over_the_passage(self):
-        """The dual-mode case: the page's passage must not resurrect the wrong figure."""
+    def test_a_page_mate_from_another_topic_is_still_excluded(self):
+        """The reported bug: dual-mode question, CPU/GPU diagram on the same page."""
         question = "Explain dual-mode operation with a neat diagram"
-        dual = FakeFigure(id=3, note_id=34, page=11, sha256="d", label_text="mode bit kernel user")
+        answer = "A mode bit distinguishes kernel mode from user mode; a trap switches modes."
         wrong = FakeFigure(id=4, note_id=34, page=10, sha256="w", label_text="CPU GPU memory")
-        passages = [(34, 10, 11, "The mode bit distinguishes kernel mode from user mode.")]
-        sources = [source(1, 34, 10, cited=False), source(2, 34, 11, cited=False)]
+        sources = [source(1, 34, 10, cited=False)]
 
-        picked = select_figures([wrong, dual], sources, 3, question=question, passages=passages)
-        assert [f.id for f in picked] == [3]
+        assert select_figures([wrong], sources, 3, question=question, answer=answer) == []
 
-    def test_still_nothing_when_neither_matches(self):
+    def test_nothing_shown_when_neither_question_nor_answer_matches(self):
         sources = [source(1, 34, 20, cited=False)]
         picked = select_figures(
-            [self.UNRELATED], sources, 3, question="Explain paging", passages=self.PASSAGES
+            [self.UNRELATED], sources, 3, question="Explain paging", answer="Paging splits memory."
         )
         assert picked == []

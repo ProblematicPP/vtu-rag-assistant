@@ -3,7 +3,8 @@
 Page proximity alone is too blunt: a single page often carries two diagrams from
 unrelated topics, and a retrieved chunk spanning that page would drag both in.
 So candidates are gathered by page, then ranked by what the diagram itself says —
-its caption and the labels read out of the image — against the question.
+its caption and the labels read out of the image — against the question and the
+answer built from the notes.
 """
 
 import re
@@ -108,26 +109,14 @@ def figure_score(figure, question_terms: set[str]) -> float:  # noqa: ANN001 - O
     return len(figure_terms & question_terms) / len(question_terms)
 
 
-def passage_score(
-    figure,  # noqa: ANN001 - ORM model
-    question_terms: set[str],
-    passages: list[tuple[int, int, int, str]],
-) -> float:
-    """How well the *text around* this diagram answers the question.
+def topic_terms(question: str, answer: str, sources: list[Source]) -> set[str]:
+    """What this answer is actually about, in words a diagram might be labelled with.
 
-    Diagrams rarely name their own topic — a symmetric-multiprocessing figure is
-    just labelled "CPU registers cache" — so the passage the figure sits in is the
-    second opinion, used only when no diagram's labels match.
+    The answer matters as much as the question: a paper asks for "symmetric
+    multiprocessing", but the diagram is labelled "CPU registers cache" — the
+    words the answer itself uses, drawn from the same notes.
     """
-    if not question_terms:
-        return 0.0
-    best = 0.0
-    for note_id, start, end, text in passages:
-        if note_id != figure.note_id or not (start <= figure.page <= end):
-            continue
-        overlap = len(_terms(text) & question_terms) / len(question_terms)
-        best = max(best, overlap)
-    return best
+    return (_terms(question) | _terms(answer)) - generic_terms(sources)
 
 
 def select_figures(
@@ -135,21 +124,16 @@ def select_figures(
     sources: list[Source],
     limit: int,
     question: str = "",
-    passages: list[tuple[int, int, int, str]] | None = None,
+    answer: str = "",
     fallback: int = FALLBACK_SOURCES,
 ) -> list[FigureOut]:
-    """Ranks candidates by what the diagram says, then by the text it sits in."""
+    """Ranks candidates by what the diagram says against what the answer says."""
     if not figures:
         return []
 
-    question_terms = _terms(question) - generic_terms(sources)
+    question_terms = topic_terms(question, answer, sources)
     scored = [(figure_score(f, question_terms), f) for f in figures]
     best = max((score for score, _ in scored), default=0.0)
-
-    if best == 0.0 and question_terms and passages:
-        # No diagram names the topic; ask which of them sits in text that does
-        scored = [(passage_score(f, question_terms, passages), f) for f in figures]
-        best = max((score for score, _ in scored), default=0.0)
 
     readable = any(f.caption or getattr(f, "label_text", None) for f in figures)
 

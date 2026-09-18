@@ -14,17 +14,14 @@ import hashlib
 import io
 import logging
 import re
-import shutil
-import subprocess
-import tempfile
 from collections import Counter
 from dataclasses import dataclass
 from enum import StrEnum
-from pathlib import Path
 
 from PIL import Image, UnidentifiedImageError
 from pypdf import PdfReader
 
+from vtu_rag.ingestion.ocr import image_to_text
 from vtu_rag.ingestion.parsers import ParsedDocument
 
 logger = logging.getLogger(__name__)
@@ -117,33 +114,14 @@ def read_labels(data: bytes, config: FigureConfig) -> str | None:
 
     Two diagrams on the same page can belong to completely different topics, and
     the page text can't separate them. What the diagram itself says can: "CPU GPU
-    memory" versus "user mode kernel mode". Sparse-text mode (--psm 11) suits
-    scattered box labels, and greyscale PNG reads better than the source JPEG.
+    memory" versus "user mode kernel mode". Sparse-text mode suits scattered box
+    labels, where a page-layout pass finds nothing.
     """
-    if shutil.which("tesseract") is None:
-        return None
-
-    try:
-        with Image.open(io.BytesIO(data)) as image:
-            grey = image.convert("L")
-            with tempfile.TemporaryDirectory(prefix="vtu-fig-") as tmp:
-                path = Path(tmp) / "figure.png"
-                grey.save(path)
-                result = subprocess.run(  # noqa: S603 - fixed argv, no shell
-                    ["tesseract", str(path), "stdout", "--psm", "11"],
-                    capture_output=True,
-                    text=True,
-                    timeout=config.label_timeout_seconds,
-                    check=False,
-                )
-    except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
-        logger.debug("Could not read labels from figure: %s", exc)
-        return None
-
-    if result.returncode != 0:
+    raw = image_to_text(data, psm="11", timeout=config.label_timeout_seconds)
+    if not raw:
         return None
     # Tesseract on line art emits plenty of junk; keep word-like tokens only
-    words = [w for w in re.findall(r"[A-Za-z][A-Za-z\-]{1,}", result.stdout) if len(w) > 1]
+    words = [w for w in re.findall(r"[A-Za-z][A-Za-z\-]{1,}", raw) if len(w) > 1]
     seen: list[str] = []
     for word in words:
         if word.lower() not in {w.lower() for w in seen}:

@@ -20,15 +20,13 @@ async def _attach_sources(response: AskResponse, session: SessionDep, container:
     settings = container.settings.figures
     spans = page_spans(response.sources) if settings.enabled else []
     if spans:
-        repo = FigureRepository(session)
-        figures = await repo.find_on_pages(spans)
-        passages = await repo.passages([s.chunk_id for s in response.sources])
+        figures = await FigureRepository(session).find_on_pages(spans)
         response.figures = select_figures(
             figures,
             response.sources,
             settings.max_per_answer,
             question=response.question,
-            passages=passages,
+            answer=response.answer,
         )
     return response
 

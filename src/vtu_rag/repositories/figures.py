@@ -19,6 +19,12 @@ class FigureRepository:
             await self.session.execute(select(Figure).where(Figure.id == figure_id))
         ).scalar_one_or_none()
 
+    async def get_many(self, figure_ids: list[int]) -> list[Figure]:
+        if not figure_ids:
+            return []
+        stmt = select(Figure).where(Figure.id.in_(figure_ids))
+        return list((await self.session.execute(stmt)).scalars())
+
     async def list_for_note(self, note_id: int) -> list[Figure]:
         stmt = (
             select(Figure)

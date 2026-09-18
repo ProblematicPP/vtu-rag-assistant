@@ -10,12 +10,15 @@ note therefore never pays for OCR twice.
 """
 
 import hashlib
+import io
 import logging
 import shutil
 import subprocess
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
+
+from PIL import Image
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +62,40 @@ class OcrConfig:
 
 def ocr_available() -> bool:
     return shutil.which(OCRMYPDF) is not None
+
+
+def tesseract_available() -> bool:
+    return shutil.which("tesseract") is not None
+
+
+def image_to_text(
+    data: bytes, *, language: str = "eng", psm: str = "3", timeout: float = 60.0
+) -> str:
+    """Runs Tesseract over an image and returns its raw text.
+
+    psm 3 reads a page of prose (a photographed question paper); psm 11 reads
+    scattered labels (the text inside a diagram).
+    """
+    if not tesseract_available():
+        return ""
+
+    try:
+        with Image.open(io.BytesIO(data)) as image:
+            grey = image.convert("L")
+            with tempfile.TemporaryDirectory(prefix="vtu-ocr-img-") as tmp:
+                path = Path(tmp) / "page.png"
+                grey.save(path)
+                result = subprocess.run(  # noqa: S603 - fixed argv, no shell
+                    ["tesseract", str(path), "stdout", "--psm", psm, "-l", language],
+                    capture_output=True,
+                    text=True,
+                    timeout=timeout,
+                    check=False,
+                )
+    except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
+        logger.warning("Tesseract failed on image: %s", exc)
+        return ""
+    return result.stdout if result.returncode == 0 else ""
 
 
 def _cache_key(data: bytes, config: OcrConfig, force: bool) -> str:

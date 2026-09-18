@@ -1,4 +1,4 @@
-from vtu_rag.routers import ask, catalog, figures, health, notes, search
+from vtu_rag.routers import ask, catalog, figures, health, notes, papers, search
 
 all_routers = [
     health.router,
@@ -7,4 +7,5 @@ all_routers = [
     search.router,
     ask.router,
     figures.router,
+    papers.router,
 ]
