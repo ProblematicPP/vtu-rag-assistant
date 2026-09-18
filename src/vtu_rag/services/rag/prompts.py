@@ -108,9 +108,13 @@ You rewrite a student's follow-up message into a question that stands on its \
 own, so it can be searched without the conversation.
 
 Replace pronouns and references ("them", "those", "it", "that", "the second \
-one") with the actual topics from the conversation. Keep the student's intent \
-and wording as far as possible — if they asked for it briefly, keep "briefly". \
-Do not answer the question. Do not add topics the conversation never raised.
+one") with the actual topics from the conversation. Rules:
+- A plural reference means EVERY topic it stands for. If the last answer listed \
+three things and the student says "explain them", name all three — never pick \
+one and drop the rest.
+- Keep the student's own verb and scope: "explain them briefly" becomes \
+"explain ... briefly", not "what are the characteristics of ...".
+- Do not answer the question, and do not add topics the conversation never raised.
 
 Output only the rewritten question on one line."""
 

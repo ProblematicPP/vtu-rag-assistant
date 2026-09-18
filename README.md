@@ -41,7 +41,8 @@ the original PDF at page 9.
 
 - [How it works](#how-it-works) · [Quick start](#quick-start) · [Adding your notes](#adding-your-notes)
 - [Ingestion in detail](#ingestion-in-detail) · [Retrieval](#retrieval) · [The agent](#the-agent)
-- [Whole question papers](#whole-question-papers) · [API](#api) · [Configuration](#configuration)
+- [Follow-up questions](#follow-up-questions) · [Whole question papers](#whole-question-papers)
+- [API](#api) · [Configuration](#configuration)
 - [Development](#development)
 
 ---
@@ -109,7 +110,7 @@ reports healthy, open **<http://localhost:7860>**.
 
 | Service | URL | Notes |
 |---|---|---|
-| **The app** (Gradio) | <http://localhost:7860> | chat with your notes, or attach a paper |
+| **The app** (React) | <http://localhost:7860> | chat with your notes, or attach a paper |
 | API docs (Swagger) | <http://localhost:8000/docs> | every endpoint, try-it-out |
 | Health | <http://localhost:8000/health> | per-service status |
 | Airflow | <http://localhost:8080> | `admin` / `admin` |
@@ -128,7 +129,7 @@ Answers then take tens of seconds instead of a few.
 <details>
 <summary><b>Port already in use?</b></summary>
 
-Every host port is configurable in `.env` — `API_HOST_PORT`, `GRADIO_HOST_PORT`, `POSTGRES_HOST_PORT`,
+Every host port is configurable in `.env` — `API_HOST_PORT`, `WEB_HOST_PORT`, `POSTGRES_HOST_PORT`,
 `OPENSEARCH_HOST_PORT`, `REDIS_HOST_PORT`, `AIRFLOW_HOST_PORT`, `LANGFUSE_HOST_PORT`.
 </details>
 
@@ -254,7 +255,8 @@ paraphrase.
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Guardrail
+    [*] --> Contextualize
+    Contextualize --> Guardrail
     Guardrail --> OutOfScope: off-syllabus
     Guardrail --> Retrieve: in scope
     Retrieve --> Grade
@@ -267,6 +269,8 @@ stateDiagram-v2
     NotFound --> [*]
 ```
 
+- **Contextualize** — resolves a follow-up against the conversation, so *"explain them briefly"*
+  becomes a question that can be searched. See [Follow-up questions](#follow-up-questions).
 - **Guardrail** — scores whether the question belongs to the VTU syllabus scope. *"Best biryani in
   Bangalore"* is declined in under a second, without touching the index. If the classifier itself
   fails, the question is allowed through rather than wrongly blocked.
@@ -278,6 +282,36 @@ stateDiagram-v2
 
 Every step is traced to **Langfuse** and returned in the response as a `steps` log, so you can see
 exactly why an answer came out the way it did.
+
+---
+
+## Follow-up questions
+
+Retrieval is stateless: *"explain them briefly"* names nothing, so searching those three words
+finds noise. The conversation therefore travels with each request, and a message that leans on it
+is rewritten into one that stands on its own **before** anything is searched.
+
+```
+you:  List the different operating modes
+      → user mode, kernel mode, dual-mode operation, SMP, clustering, …
+
+you:  explain them briefly
+      → searched as "explain user mode, kernel mode, dual-mode operation, … briefly"
+```
+
+Two details keep this cheap and honest:
+
+- **The rewrite only runs when it has to.** A message is judged dependent when every word in it is
+  glue, a reference, or a way of asking — `"explain them briefly"` has nothing left, `"List its
+  types"` has *types*. Ordinary questions never pay for the extra call.
+- **A bad rewrite is visible, not silent.** The resolved question comes back as
+  `resolved_question` and the UI prints *answered as "…"* under the answer, so a wrong guess is
+  something you can see rather than something that quietly answers the wrong thing. If the rewrite
+  fails or resolves nothing, the question is searched exactly as you typed it.
+
+Only the last three turns are used, and each previous answer is reduced to its opening plus the
+topics it named — a plural *"them"* has to be able to reach all of them, not just the ones that
+survived a character limit.
 
 ---
 
@@ -380,13 +414,30 @@ docker compose --profile dashboards up -d              # OpenSearch Dashboards o
 
 ```bash
 uv sync                          # Python 3.11–3.13
-uv run pytest                    # ~96 unit tests, no services needed
+uv run pytest                    # 147 unit tests, no services needed
 uv run ruff check src tests
 
 # API on the host against the compose services
 docker compose up -d postgres opensearch redis ollama
 POSTGRES_HOST=localhost OPENSEARCH_HOST=http://localhost:9200 REDIS_HOST=localhost \
 OLLAMA_HOST=http://localhost:11434 DATA_DIR=data uv run uvicorn vtu_rag.main:app --reload
+```
+
+The interface is a separate Vite app. `npm run dev` proxies `/api` and `/health` to the API on
+port 8000, exactly as nginx does inside the container, so it talks to one origin either way:
+
+```bash
+cd frontend
+npm install
+npm run dev                      # http://localhost:5173, hot reload
+npm run build                    # type-check, then build what nginx serves
+```
+
+Changing Python source means rebuilding the image — `src/` is baked in, not mounted, so
+`docker compose restart api` keeps running the old code:
+
+```bash
+docker compose up -d --build api
 ```
 
 ```
@@ -398,7 +449,8 @@ src/vtu_rag/
   services/          embeddings, search, llm, rag, cache, tracing, figure store
   agent/             LangGraph state, graph, service
   routers/           FastAPI endpoints              schemas/       request/response models
-  ui/                Gradio app                     bots/          Telegram bot
+  bots/              Telegram bot
+frontend/            React app (Vite + TypeScript), served by nginx
 airflow/dags/        scheduled re-index DAG
 scripts/ingest.py    ingestion CLI
 tests/               unit tests for chunking, parsing, OCR, figures, search, agent routing

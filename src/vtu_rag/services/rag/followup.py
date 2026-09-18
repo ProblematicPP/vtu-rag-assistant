@@ -23,6 +23,13 @@ MAX_QUESTION_CHARS = 300
 # Enough to resolve "them" without burying the rewriter in old topics
 HISTORY_TURNS = 3
 ANSWER_EXCERPT_CHARS = 400
+# Kept alongside the opening so a plural reference can reach every topic
+MAX_ITEMS = 12
+ITEM_CHARS = 70
+
+# "1. Kernel mode", "- User mode", "* Protection", "• Memory management"
+_ITEM = re.compile(r"^\s*(?:[-*+•▪]|\d+[.)])\s+\S")
+_ITEM_LABEL = re.compile(r"^\s*(?:[-*+•▪]|\d+[.)])\s+")
 
 # Words that never name a topic: references to an earlier turn, the verbs a
 # student uses to ask for one, and ordinary glue. A message built only from
@@ -58,16 +65,43 @@ def needs_context(question: str) -> bool:
     return not any(word not in _EMPTY_WORDS for word in words)
 
 
+def summarize_answer(answer: str) -> str:
+    """An answer cut down to what a follow-up might be pointing at.
+
+    Plain truncation loses the tail of a list, and "explain them" then resolves
+    to whichever items survived — the rewrite that drops half the topics. Every
+    list item is kept, headline first, so a plural reference can still find all
+    of them.
+    """
+    text = (answer or "").strip()
+    if not text:
+        return ""
+
+    # Only the outermost level: nested bullets are detail about a topic, and
+    # listing them alongside buries the topics themselves
+    matched = [line for line in text.splitlines() if _ITEM.match(line)]
+    if matched:
+        outermost = min(len(line) - len(line.lstrip()) for line in matched)
+        matched = [line for line in matched if len(line) - len(line.lstrip()) == outermost]
+    items = [_ITEM_LABEL.sub("", line).strip(" .:*") for line in matched]
+    items = [item[:ITEM_CHARS] for item in items if item][:MAX_ITEMS]
+
+    opening = " ".join(text.split())
+    if len(opening) > ANSWER_EXCERPT_CHARS:
+        opening = opening[:ANSWER_EXCERPT_CHARS].rstrip() + "…"
+    if not items:
+        return opening
+    return f"{opening}\nTopics named: {'; '.join(items)}"
+
+
 def format_history(history: list[Turn]) -> str:
-    """The recent turns, with answers trimmed to the part that names topics."""
+    """The recent turns, with answers cut down to the topics they name."""
     lines: list[str] = []
     for turn in history[-HISTORY_TURNS:]:
         lines.append(f"Student: {turn.question.strip()}")
-        answer = " ".join((turn.answer or "").split())
-        if answer:
-            if len(answer) > ANSWER_EXCERPT_CHARS:
-                answer = answer[:ANSWER_EXCERPT_CHARS] + "…"
-            lines.append(f"Assistant: {answer}")
+        summary = summarize_answer(turn.answer)
+        if summary:
+            lines.append(f"Assistant: {summary}")
     return "\n".join(lines)
 
 
@@ -77,7 +111,12 @@ def _clean(text: str) -> str:
     for prefix in ("Standalone question:", "Rewritten question:", "Question:"):
         if line.lower().startswith(prefix.lower()):
             line = line[len(prefix) :].strip()
-    return line.strip("\"'`")[:MAX_QUESTION_CHARS]
+    line = line.strip("\"'`")
+    if len(line) <= MAX_QUESTION_CHARS:
+        return line
+    # Cut at a word boundary: the resolved question is shown to the student
+    cut = line[:MAX_QUESTION_CHARS].rsplit(" ", 1)[0]
+    return cut.rstrip(" ,;")
 
 
 class FollowUpResolver:

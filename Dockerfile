@@ -23,7 +23,9 @@ RUN apt-get update \
 
 WORKDIR /app
 
-# Dependencies first for layer caching
+# Dependencies first for layer caching. The default 30s is not enough for the
+# larger wheels (torch-sized downloads time out mid-extraction on a home line).
+ENV UV_HTTP_TIMEOUT=180
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 
@@ -32,5 +34,5 @@ COPY src ./src
 COPY scripts ./scripts
 RUN uv sync --frozen --no-dev
 
-EXPOSE 8000 7860
+EXPOSE 8000
 CMD ["uvicorn", "vtu_rag.main:app", "--host", "0.0.0.0", "--port", "8000"]

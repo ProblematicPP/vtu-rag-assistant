@@ -21,7 +21,6 @@ dependencies = [
     "pyyaml>=6.0",
     "langgraph>=0.2.60",
     "langfuse>=2.57,<3",
-    "gradio>=5.9",
     "python-telegram-bot>=21.9",
 ]
 

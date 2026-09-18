@@ -135,21 +135,24 @@ services:
       timeout: 5s
       retries: 30
 
-  gradio:
-    <<: *app
-    command: ["python", "-m", "vtu_rag.ui.gradio_app"]
-    environment:
-      GRADIO_ANALYTICS_ENABLED: "False"
+  # React app built to static files and served by nginx, which also proxies
+  # /api and /health to the API so the browser only ever talks to one origin.
+  web:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    image: chatvtu-web:latest
     ports:
-      - "${GRADIO_HOST_PORT:-7860}:7860"
+      - "${WEB_HOST_PORT:-7860}:80"
     depends_on:
       api:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "curl -fs http://localhost:7860/ >/dev/null || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/ >/dev/null || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 12
+    restart: unless-stopped
 
   telegram-bot:
     <<: *app
