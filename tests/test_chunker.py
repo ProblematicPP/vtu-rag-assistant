@@ -1,11 +1,23 @@
-from pathlib import Path
-
 import pytest
 
 from vtu_rag.ingestion.chunker import SectionChunker, _heading_level
 from vtu_rag.ingestion.parsers import ParsedDocument, ParsedPage, parse_text
 
-SAMPLE = Path(__file__).parents[1] / "data/cse/2022/sem3/BCS303/module1-sample.md"
+# A miniature module note: headings at two levels, prose, and a short section
+NOTE = """# Module 1: Introduction to Operating Systems
+
+## 1.1 What an Operating System Does
+
+{body_a}
+
+## 1.2 Dual-Mode Operation
+
+{body_b}
+
+## 1.3 Interrupts
+
+{body_c}
+"""
 
 
 def words(n: int, prefix: str = "w") -> str:
@@ -79,10 +91,13 @@ def test_zero_overlap_does_not_duplicate_text():
     assert sum(c.word_count for c in chunks) == 900
 
 
-def test_sample_note_chunks_sensibly():
-    doc = parse_text(SAMPLE.read_bytes())
-    chunks = SectionChunker().chunk(doc)
+def test_a_whole_note_chunks_sensibly():
+    note = NOTE.format(body_a=words(400, "a"), body_b=words(400, "b"), body_c=words(400, "c"))
+    chunks = SectionChunker().chunk(parse_text(note.encode()))
     headings = [c.section_heading for c in chunks]
+
     assert len(chunks) >= 4
     assert any(h and "Dual-Mode Operation" in h for h in headings)
+    # Every heading keeps its parent path, so citations name the module too
+    assert all(h and h.startswith("Module 1: Introduction") for h in headings)
     assert all(c.word_count >= 40 for c in chunks)

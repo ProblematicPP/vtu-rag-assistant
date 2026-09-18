@@ -77,7 +77,21 @@ curl -F file=@os-module2.pdf -F subject_code=BCS303 -F module_number=2 \
 ```
 
 Unchanged notes are skipped by content hash. If you add a `JINA_API_KEY` later, notes that were indexed as
-BM25-only get embedded on the next sync. Scanned PDFs with no text layer need OCR first.
+BM25-only get embedded on the next sync.
+
+### Scanned notes
+
+Most VTU notes in circulation are photocopies scanned to PDF — pages of images with no text to extract.
+Those are handled automatically: when too many pages come back near-empty, the file goes through
+[ocrmypdf](https://ocrmypdf.readthedocs.io) (Tesseract) to gain a text layer, and the result is parsed
+instead. A junk text layer triggers a second pass with `--force-ocr`.
+
+- OCR runs at roughly 1–3 seconds per page, so the first ingest of a scanned module takes a while;
+  bulk-load via `scripts/ingest.py` or the Airflow DAG rather than waiting on an HTTP upload.
+- Results are cached in `data/.ocr-cache`, keyed by file content — re-indexing never re-runs OCR.
+- The response from `/api/v1/notes` reports `"ocr": true` when a text layer had to be created.
+- Tune with the `OCR_*` settings in `.env`; other languages need the matching Tesseract pack added to
+  the Dockerfile (e.g. `tesseract-ocr-kan` for Kannada, then `OCR_LANGUAGE=eng+kan`).
 
 Subject names and module titles come from [data/catalog.yaml](data/catalog.yaml), which is seeded for the
 **CSE 2022 scheme**. Check it against the official VTU syllabus and extend it for your branch.

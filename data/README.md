@@ -19,10 +19,9 @@ data/cse/2022/sem4/BCS401/module4-dynamic-programming.pdf
 - Several files per module are fine; each becomes its own note.
 - Subject names and module titles come from [catalog.yaml](catalog.yaml).
 
-Everything here except this README, catalog.yaml and the sample note is
-git-ignored (notes are usually third-party material). The markdown
-sample under `cse/2022/sem3/BCS303/` is original demo content so the pipeline
-can be tried without any PDFs.
+Everything here except this README and catalog.yaml is git-ignored, since
+notes are usually third-party material. Scanned PDFs are fine: they are
+OCR'd automatically on ingest (see OCR_* in `.env.example`).
 
 After adding files, either run `docker compose exec api python scripts/ingest.py`,
 call `POST /api/v1/notes/sync`, or wait for the Airflow `reindex_vtu_notes` DAG.
