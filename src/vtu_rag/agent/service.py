@@ -3,7 +3,7 @@ import time
 from vtu_rag.agent.graph import AgentGraph
 from vtu_rag.agent.state import AgentContext, AgentState
 from vtu_rag.config import AgentSettings
-from vtu_rag.schemas.ask import AgenticAskResponse, AgentStep
+from vtu_rag.schemas.ask import AgenticAskResponse, AgentStep, Turn
 from vtu_rag.services.cache import ResponseCache
 from vtu_rag.services.llm import LLMProvider
 from vtu_rag.services.rag.service import DiagramProbe
@@ -33,12 +33,17 @@ class AgentService:
         filters: SearchFilters,
         top_k: int | None = None,
         use_cache: bool = True,
+        history: list[Turn] | None = None,
     ) -> AgenticAskResponse:
         started = time.perf_counter()
         top_k = top_k or self.settings.top_k
+        history = history or []
         key = ResponseCache.make_key(
             "agentic-ask",
             question=" ".join(question.lower().split()),
+            # A follow-up means something different after a different question,
+            # so the turn it leans on belongs in the key
+            context=" ".join(history[-1].question.lower().split()) if history else "",
             filters=filters.cache_key(),
             top_k=top_k,
             provider=self.llm.name,
@@ -54,12 +59,15 @@ class AgentService:
         )
         initial: AgentState = {"question": question, "rewritten_queries": [], "steps": []}
         final: AgentState = await self.agent.graph.ainvoke(
-            initial, context=AgentContext(filters=filters, top_k=top_k, trace=trace)
+            initial,
+            context=AgentContext(filters=filters, top_k=top_k, trace=trace, history=list(history)),
         )
 
         search_mode = final.get("search_mode")
+        standalone = final.get("standalone", question)
         response = AgenticAskResponse(
             question=question,
+            resolved_question=standalone if standalone != question else None,
             answer=final["answer"],
             sources=final.get("sources", []),
             search_mode=SearchMode(search_mode) if search_mode else None,

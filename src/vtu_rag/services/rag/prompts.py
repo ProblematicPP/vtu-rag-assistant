@@ -35,6 +35,10 @@ DIAGRAM_MISSING = """\
 sketch a small labelled text diagram of your own after the explanation.
 """
 
+MARKS_HINT = """
+This question carries {marks} marks, so write an answer long enough to earn \
+them — roughly {points} well-explained points."""
+
 ANSWER_USER = """\
 Question: {question}
 
@@ -94,3 +98,26 @@ OUT_OF_SCOPE_ANSWER = (
     "definitions, derivations, and topics from your subject notes. "
     "Try asking something like “Explain paging in operating systems.”"
 )
+
+# ------------------------------------------------------------- follow-ups
+# "Explain them briefly" cannot be searched: it names nothing. Before retrieval
+# a dependent question is rewritten into one that stands on its own, using what
+# was asked and answered just before it.
+CONDENSE_SYSTEM = """\
+You rewrite a student's follow-up message into a question that stands on its \
+own, so it can be searched without the conversation.
+
+Replace pronouns and references ("them", "those", "it", "that", "the second \
+one") with the actual topics from the conversation. Keep the student's intent \
+and wording as far as possible — if they asked for it briefly, keep "briefly". \
+Do not answer the question. Do not add topics the conversation never raised.
+
+Output only the rewritten question on one line."""
+
+CONDENSE_USER = """\
+Conversation so far:
+{history}
+
+Follow-up message: {question}
+
+Rewrite it as a standalone question."""

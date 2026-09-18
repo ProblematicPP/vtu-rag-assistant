@@ -25,7 +25,9 @@ async def _attach_sources(response: AskResponse, session: SessionDep, container:
             figures,
             response.sources,
             settings.max_per_answer,
-            question=response.question,
+            # Figures are matched against what was actually answered, which
+            # for a follow-up is the resolved question, not "explain them"
+            question=response.resolved_question or response.question,
             answer=response.answer,
         )
     return response
@@ -38,7 +40,11 @@ async def _attach_sources(response: AskResponse, session: SessionDep, container:
 )
 async def ask(request: AskRequest, container: ContainerDep, session: SessionDep) -> AskResponse:
     response = await container.rag.ask(
-        request.question, request.to_filters(), top_k=request.top_k, use_cache=request.use_cache
+        request.question,
+        request.to_filters(),
+        top_k=request.top_k,
+        use_cache=request.use_cache,
+        history=request.history,
     )
     return await _attach_sources(response, session, container)
 
@@ -52,6 +58,10 @@ async def agentic_ask(
     request: AskRequest, agent: AgentDep, container: ContainerDep, session: SessionDep
 ) -> AgenticAskResponse:
     response = await agent.ask(
-        request.question, request.to_filters(), top_k=request.top_k, use_cache=request.use_cache
+        request.question,
+        request.to_filters(),
+        top_k=request.top_k,
+        use_cache=request.use_cache,
+        history=request.history,
     )
     return await _attach_sources(response, session, container)

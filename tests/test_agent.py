@@ -53,7 +53,7 @@ async def test_happy_path_answers_with_citations():
     agent = make_agent(llm_for(), search)
     res = await agent.ask("What is paging?", SearchFilters(subject_code="BCS303"))
 
-    assert nodes(res) == ["guardrail", "retrieve", "grade", "generate"]
+    assert nodes(res) == ["contextualize", "guardrail", "retrieve", "grade", "generate"]
     assert res.in_scope and res.guardrail_score == 90
     assert res.answer.startswith("Paging divides memory")
     # only the relevant hit is passed to generation
@@ -66,7 +66,7 @@ async def test_out_of_scope_question_is_declined_without_retrieval():
     agent = make_agent(llm_for(guard_score=5), search)
     res = await agent.ask("Who won the cricket match yesterday?", SearchFilters())
 
-    assert nodes(res) == ["guardrail", "decline"]
+    assert nodes(res) == ["contextualize", "guardrail", "decline"]
     assert not res.in_scope
     assert res.answer == prompts.OUT_OF_SCOPE_ANSWER
     assert search.queries == []
@@ -78,6 +78,7 @@ async def test_weak_retrieval_triggers_rewrite_then_succeeds():
     res = await make_agent(llm, search).ask("wat is pagin", SearchFilters())
 
     assert nodes(res) == [
+        "contextualize",
         "guardrail",
         "retrieve",
         "grade",

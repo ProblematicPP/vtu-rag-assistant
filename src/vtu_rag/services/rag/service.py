@@ -3,7 +3,7 @@
 import time
 from collections.abc import Awaitable, Callable
 
-from vtu_rag.schemas.ask import AskResponse, Source
+from vtu_rag.schemas.ask import AskResponse, Source, Turn
 from vtu_rag.services.cache import ResponseCache
 from vtu_rag.services.llm import ChatMessage, LLMProvider
 from vtu_rag.services.rag import prompts
@@ -14,6 +14,7 @@ from vtu_rag.services.rag.context import (
     scope_description,
     strip_citation_markers,
 )
+from vtu_rag.services.rag.followup import FollowUpResolver
 from vtu_rag.services.search import SearchFilters, SearchHit, SearchService
 from vtu_rag.services.tracing import NOOP_TRACE, Trace, Tracer
 
@@ -79,6 +80,7 @@ class RAGService:
         self.cache = cache
         self.tracer = tracer
         self.generator = AnswerGenerator(llm)
+        self.followup = FollowUpResolver(llm)
         # Answers the question "will a diagram from the notes be shown?"
         self.diagram_probe = diagram_probe or no_diagram
 
@@ -107,25 +109,30 @@ class RAGService:
         top_k: int = 5,
         use_cache: bool = True,
         marks: int | None = None,
+        history: list[Turn] | None = None,
     ) -> AskResponse:
         started = time.perf_counter()
-        key = self.cache_key("ask", question, filters, top_k, marks)
+        # Resolved before the cache is consulted, so "explain them briefly" after
+        # two different questions doesn't hit the same entry
+        asked = await self.followup.resolve(question, history)
+        key = self.cache_key("ask", asked, filters, top_k, marks)
         if use_cache and (cached := await self.cache.get(key)):
             return AskResponse.model_validate(cached | {"cached": True})
 
         trace = self.tracer.start_trace(
-            "ask", input={"question": question, "filters": filters.cache_key(), "top_k": top_k}
+            "ask", input={"question": asked, "filters": filters.cache_key(), "top_k": top_k}
         )
-        span = trace.span("retrieve", input={"query": question})
-        result = await self.search.search(question, filters, size=top_k)
+        span = trace.span("retrieve", input={"query": asked})
+        result = await self.search.search(asked, filters, size=top_k)
         span.end(output={"hits": [h.doc_id for h in result.hits]}, mode=result.mode.value)
 
-        diagram_shown = await self.diagram_probe(result.hits, question)
+        diagram_shown = await self.diagram_probe(result.hits, asked)
         answer, sources = await self.generator.generate(
-            question, result.hits, filters, trace, diagram_shown=diagram_shown, marks=marks
+            asked, result.hits, filters, trace, diagram_shown=diagram_shown, marks=marks
         )
         response = AskResponse(
             question=question,
+            resolved_question=asked if asked != question else None,
             answer=answer,
             sources=sources,
             search_mode=result.mode,

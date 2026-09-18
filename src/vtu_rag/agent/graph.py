@@ -1,10 +1,13 @@
 """Agentic RAG workflow.
 
-    START → guardrail ─┬─ in scope ──→ retrieve → grade ─┬─ relevant ─────────→ generate → END
-                       │                   ↑              ├─ weak, retries left → rewrite ┐
-                       │                   └──────────────┼───────────────────────────────┘
-                       │                                  └─ weak, no retries ─→ generate
-                       └─ out of scope → decline → END
+    START → contextualize → guardrail ─┬─ in scope ─→ retrieve → grade ─┬─ relevant ────→ generate
+                                       │                  ↑             ├─ retries left → rewrite ┐
+                                       │                  └─────────────┼─────────────────────────┘
+                                       │                                └─ no retries ─→ generate
+                                       └─ out of scope → decline
+
+Contextualize resolves a follow-up against the thread, so every node after it
+works on a question that stands on its own.
 
 Grading drives query rewriting. When retries are exhausted, generation still
 runs on the best retrieved excerpts and the answer prompt tells the model to
@@ -24,6 +27,7 @@ from vtu_rag.config import AgentSettings
 from vtu_rag.services.llm import ChatMessage, LLMError, LLMProvider, parse_json_object
 from vtu_rag.services.rag import prompts
 from vtu_rag.services.rag.context import format_context, scope_description
+from vtu_rag.services.rag.followup import FollowUpResolver
 from vtu_rag.services.rag.service import AnswerGenerator, DiagramProbe, no_diagram
 from vtu_rag.services.search import SearchService
 
@@ -48,11 +52,13 @@ class AgentGraph:
         self.llm = llm
         self.settings = settings
         self.generator = AnswerGenerator(llm)
+        self.followup = FollowUpResolver(llm)
         self.diagram_probe = diagram_probe or no_diagram
         self.graph: CompiledStateGraph = self._build()
 
     def _build(self) -> CompiledStateGraph:
         builder = StateGraph(AgentState, context_schema=AgentContext)
+        builder.add_node("contextualize", self.contextualize)
         builder.add_node("guardrail", self.guardrail)
         builder.add_node("decline", self.decline)
         builder.add_node("retrieve", self.retrieve)
@@ -60,7 +66,8 @@ class AgentGraph:
         builder.add_node("rewrite", self.rewrite)
         builder.add_node("generate", self.generate)
 
-        builder.add_edge(START, "guardrail")
+        builder.add_edge(START, "contextualize")
+        builder.add_edge("contextualize", "guardrail")
         builder.add_conditional_edges("guardrail", self.route_after_guardrail)
         builder.add_edge("decline", END)
         builder.add_edge("retrieve", "grade")
@@ -70,15 +77,28 @@ class AgentGraph:
         return builder.compile()
 
     # ------------------------------------------------------------------ nodes
+    async def contextualize(self, state: AgentState, runtime: Runtime[AgentContext]) -> dict:
+        """Resolves "explain them briefly" into a question that can be searched."""
+        ctx = runtime.context
+        question = state["question"]
+        standalone = await self.followup.resolve(question, ctx.history, ctx.trace)
+        resolved = standalone != question
+        return {
+            "standalone": standalone,
+            "query": standalone,
+            "attempts": 0,
+            **_step("contextualize", resolved=resolved, standalone=standalone if resolved else ""),
+        }
+
     async def guardrail(self, state: AgentState, runtime: Runtime[AgentContext]) -> dict:
         ctx = runtime.context
-        span = ctx.trace.span("guardrail", input={"question": state["question"]})
+        span = ctx.trace.span("guardrail", input={"question": state["standalone"]})
         scope = scope_description(ctx.filters)
         hint = f"The student is studying{scope}.\n" if scope else ""
         messages = [
             ChatMessage("system", prompts.GUARDRAIL_SYSTEM),
             ChatMessage(
-                "user", prompts.GUARDRAIL_USER.format(scope_hint=hint, question=state["question"])
+                "user", prompts.GUARDRAIL_USER.format(scope_hint=hint, question=state["standalone"])
             ),
         ]
         try:
@@ -100,8 +120,6 @@ class AgentGraph:
             "in_scope": in_scope,
             "guardrail_score": score,
             "guardrail_reason": reason,
-            "query": state["question"],
-            "attempts": 0,
             **_step("guardrail", score=score, in_scope=in_scope, reason=reason),
         }
 
@@ -132,7 +150,7 @@ class AgentGraph:
         messages = [
             ChatMessage("system", prompts.GRADE_SYSTEM),
             ChatMessage(
-                "user", prompts.GRADE_USER.format(question=state["question"], context=context)
+                "user", prompts.GRADE_USER.format(question=state["standalone"], context=context)
             ),
         ]
         try:
@@ -162,7 +180,7 @@ class AgentGraph:
             ChatMessage("system", prompts.REWRITE_SYSTEM),
             ChatMessage(
                 "user",
-                prompts.REWRITE_USER.format(question=state["question"], query=state["query"]),
+                prompts.REWRITE_USER.format(question=state["standalone"], query=state["query"]),
             ),
         ]
         try:
@@ -174,7 +192,7 @@ class AgentGraph:
             new_query = ""
         if not new_query or new_query.lower() == state["query"].lower():
             # Fall back to a broader keyword query so the retry isn't identical
-            new_query = f"{state['question']} definition explanation concepts"[:MAX_QUERY_CHARS]
+            new_query = f"{state['standalone']} definition explanation concepts"[:MAX_QUERY_CHARS]
 
         span.end(output={"query": new_query})
         return {
@@ -187,9 +205,9 @@ class AgentGraph:
         ctx = runtime.context
         hits = state.get("relevant_hits") or state.get("hits") or []
         span = ctx.trace.span("generate", input={"hits": len(hits)})
-        diagram_shown = await self.diagram_probe(hits, state["question"])
+        diagram_shown = await self.diagram_probe(hits, state["standalone"])
         answer, sources = await self.generator.generate(
-            state["question"], hits, ctx.filters, ctx.trace, diagram_shown=diagram_shown
+            state["standalone"], hits, ctx.filters, ctx.trace, diagram_shown=diagram_shown
         )
         span.end(output={"answer_chars": len(answer), "sources": len(sources)})
         return {

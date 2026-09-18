@@ -6,10 +6,20 @@ from vtu_rag.schemas.search import SearchFilterParams
 from vtu_rag.services.search import SearchHit, SearchMode
 
 
+class Turn(BaseModel):
+    """One exchange already in the thread, sent so follow-ups can be resolved."""
+
+    question: str = Field(..., max_length=1000)
+    answer: str = Field("", max_length=8000)
+
+
 class AskRequest(SearchFilterParams):
     question: str = Field(
         ..., min_length=3, max_length=1000, examples=["Explain dual-mode operation."]
     )
+    # Earlier turns of this conversation, oldest first. Only used when the
+    # question leans on them ("explain them briefly"); otherwise ignored.
+    history: list[Turn] = Field(default_factory=list, max_length=12)
     top_k: int = Field(8, ge=1, le=15)
     use_cache: bool = True
 
@@ -155,6 +165,9 @@ def notes_from_sources(sources: list[Source], limit: int = 3) -> list[NoteRef]:
 
 class AskResponse(BaseModel):
     question: str
+    # What was actually searched and answered, when a follow-up was resolved
+    # against the thread. None when the question already stood on its own.
+    resolved_question: str | None = None
     answer: str
     sources: list[Source]
     notes: list[NoteRef] = Field(default_factory=list)
