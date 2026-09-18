@@ -32,3 +32,8 @@ airflow/plugins/__pycache__/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Scratch files from local testing (sample papers, generated answer PDFs)
+/*.pdf
+/*.png
+/payload.json
