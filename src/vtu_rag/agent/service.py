@@ -6,6 +6,7 @@ from vtu_rag.config import AgentSettings
 from vtu_rag.schemas.ask import AgenticAskResponse, AgentStep
 from vtu_rag.services.cache import ResponseCache
 from vtu_rag.services.llm import LLMProvider
+from vtu_rag.services.rag.service import DiagramProbe
 from vtu_rag.services.search import SearchFilters, SearchMode, SearchService
 from vtu_rag.services.tracing import Tracer
 
@@ -18,12 +19,13 @@ class AgentService:
         cache: ResponseCache,
         tracer: Tracer,
         settings: AgentSettings,
+        diagram_probe: DiagramProbe | None = None,
     ):
         self.llm = llm
         self.cache = cache
         self.tracer = tracer
         self.settings = settings
-        self.agent = AgentGraph(search, llm, settings)
+        self.agent = AgentGraph(search, llm, settings, diagram_probe)
 
     async def ask(
         self,

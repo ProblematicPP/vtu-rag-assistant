@@ -30,7 +30,8 @@ def llm_for(
             return json.dumps({"relevant": next(grades), "reason": "test"})
         if system == prompts.REWRITE_SYSTEM:
             return rewrite
-        if system == prompts.ANSWER_SYSTEM:
+        # the answer prompt carries a diagram rule appended to it
+        if system.startswith(prompts.ANSWER_SYSTEM):
             return answer
         raise AssertionError(f"unexpected prompt: {system[:40]}")
 

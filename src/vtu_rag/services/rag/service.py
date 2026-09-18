@@ -1,6 +1,7 @@
 """Single-pass RAG: retrieve → generate with citations."""
 
 import time
+from collections.abc import Awaitable, Callable
 
 from vtu_rag.schemas.ask import AskResponse, Source
 from vtu_rag.services.cache import ResponseCache
@@ -16,6 +17,15 @@ from vtu_rag.services.search import SearchFilters, SearchHit, SearchService
 from vtu_rag.services.tracing import NOOP_TRACE, Trace, Tracer
 
 
+async def no_diagram(hits: list[SearchHit], question: str) -> bool:
+    """Default probe: assume nothing will be shown, so a sketch is allowed."""
+    return False
+
+
+# Given the retrieved excerpts and the question, is a diagram going to be shown?
+DiagramProbe = Callable[[list[SearchHit], str], Awaitable[bool]]
+
+
 class AnswerGenerator:
     """Shared by the simple RAG endpoint and the agent's generate node."""
 
@@ -28,13 +38,15 @@ class AnswerGenerator:
         hits: list[SearchHit],
         filters: SearchFilters,
         trace: Trace = NOOP_TRACE,
+        diagram_shown: bool = False,
     ) -> tuple[str, list[Source]]:
         if not hits:
             return prompts.NO_CONTEXT_ANSWER.format(scope=scope_description(filters)), []
 
         context, sources = format_context(hits)
+        diagram_rule = prompts.DIAGRAM_SHOWN if diagram_shown else prompts.DIAGRAM_MISSING
         messages = [
-            ChatMessage("system", prompts.ANSWER_SYSTEM),
+            ChatMessage("system", prompts.ANSWER_SYSTEM + diagram_rule),
             ChatMessage("user", prompts.ANSWER_USER.format(question=question, context=context)),
         ]
         response = await self.llm.generate(messages)
@@ -51,12 +63,15 @@ class RAGService:
         llm: LLMProvider,
         cache: ResponseCache,
         tracer: Tracer,
+        diagram_probe: DiagramProbe | None = None,
     ):
         self.search = search
         self.llm = llm
         self.cache = cache
         self.tracer = tracer
         self.generator = AnswerGenerator(llm)
+        # Answers the question "will a diagram from the notes be shown?"
+        self.diagram_probe = diagram_probe or no_diagram
 
     def cache_key(self, kind: str, question: str, filters: SearchFilters, top_k: int) -> str:
         return ResponseCache.make_key(
@@ -83,7 +98,10 @@ class RAGService:
         result = await self.search.search(question, filters, size=top_k)
         span.end(output={"hits": [h.doc_id for h in result.hits]}, mode=result.mode.value)
 
-        answer, sources = await self.generator.generate(question, result.hits, filters, trace)
+        diagram_shown = await self.diagram_probe(result.hits, question)
+        answer, sources = await self.generator.generate(
+            question, result.hits, filters, trace, diagram_shown=diagram_shown
+        )
         response = AskResponse(
             question=question,
             answer=answer,

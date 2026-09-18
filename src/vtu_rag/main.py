@@ -27,7 +27,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await container.startup()
     app.state.container = container
     app.state.agent = AgentService(
-        container.search, container.llm, container.cache, container.tracer, settings.agent
+        container.search,
+        container.llm,
+        container.cache,
+        container.tracer,
+        settings.agent,
+        container.diagram_probe,
     )
     logger.info(
         "VTU RAG API ready (llm=%s:%s, embeddings=%s)",

@@ -7,11 +7,13 @@ from vtu_rag.config import Settings
 from vtu_rag.db import Database
 from vtu_rag.ingestion.catalog_loader import seed_catalog
 from vtu_rag.ingestion.pipeline import IngestionService
+from vtu_rag.repositories import FigureRepository
 from vtu_rag.services.cache import ResponseCache
 from vtu_rag.services.embeddings import EmbeddingProvider, JinaEmbeddings
 from vtu_rag.services.llm import LLMProvider, create_llm_provider
+from vtu_rag.services.rag.figures import any_figure_matches
 from vtu_rag.services.rag.service import RAGService
-from vtu_rag.services.search import SearchService
+from vtu_rag.services.search import SearchHit, SearchService
 from vtu_rag.services.tracing import Tracer
 
 logger = logging.getLogger(__name__)
@@ -28,6 +30,7 @@ class Container:
     llm: LLMProvider
     tracer: Tracer
     rag: RAGService
+    diagram_probe: object
 
     @classmethod
     def build(cls, settings: Settings) -> "Container":
@@ -38,7 +41,25 @@ class Container:
         ingestion = IngestionService(settings, db, search, embeddings, cache)
         llm = create_llm_provider(settings)
         tracer = Tracer(settings.langfuse)
-        rag = RAGService(search, llm, cache, tracer)
+
+        async def diagram_probe(hits: list[SearchHit], question: str) -> bool:
+            """Whether a diagram from the notes will accompany this answer.
+
+            Asked before generation so the prompt can stop the model drawing an
+            ASCII diagram over the top of a real one from the student's notes.
+            """
+            spans = [
+                (hit.note_id, hit.page_start, hit.page_end or hit.page_start)
+                for hit in hits
+                if hit.page_start is not None
+            ]
+            if not settings.figures.enabled or not spans:
+                return False
+            async with db.session() as session:
+                figures = await FigureRepository(session).find_on_pages(spans)
+            return any_figure_matches(figures, question, hits)
+
+        rag = RAGService(search, llm, cache, tracer, diagram_probe)
         return cls(
             settings=settings,
             db=db,
@@ -49,6 +70,7 @@ class Container:
             llm=llm,
             tracer=tracer,
             rag=rag,
+            diagram_probe=diagram_probe,
         )
 
     async def startup(self) -> None:

@@ -15,6 +15,20 @@ what is missing. If they don't answer it at all, say so plainly.
 Use short headings only for long answers. Be concise; no closing summary.
 """
 
+# Diagrams are extracted from the student's own notes and displayed with the
+# answer, so drawing an ASCII one over the top is duplicated, worse-looking work.
+# With no diagram in the notes, a sketch is better than nothing.
+DIAGRAM_SHOWN = """\
+- A diagram from the student's own notes is displayed directly beneath your \
+answer. Do NOT draw an ASCII or text diagram, and do not spell one out line by \
+line. Refer to it as "the diagram shown" if the answer needs to point at it.
+"""
+
+DIAGRAM_MISSING = """\
+- The notes hold no diagram for this topic. If the question asks for one, \
+sketch a small labelled text diagram of your own after the explanation.
+"""
+
 ANSWER_USER = """\
 Question: {question}
 

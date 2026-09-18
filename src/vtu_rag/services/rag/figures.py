@@ -45,9 +45,22 @@ def _terms(text: str | None) -> set[str]:
             if len(part) < 3 or part in _NOISE_WORDS:
                 continue
             terms.add(part)
-            if (singular := _singular(part)) is not None:
-                terms.add(singular)
+            terms.update(_variants(part))
     return terms
+
+
+def _variants(word: str) -> set[str]:
+    """Crude stems, so a question's "paging" meets a diagram labelled "page table".
+
+    Exam questions and diagram labels use different forms of the same word:
+    paging/page, allocation/allocate, scheduling/schedule.
+    """
+    forms: set[str] = set()
+    if (singular := _singular(word)) is not None:
+        forms.add(singular)
+    if len(word) > 5 and word.endswith(("ing", "ion")):
+        forms.update({word[:-3], word[:-3] + "e"})
+    return {form for form in forms if len(form) >= 3}
 
 
 def _singular(word: str) -> str | None:
@@ -65,7 +78,17 @@ def _singular(word: str) -> str | None:
     return None
 
 
-def generic_terms(sources: list[Source]) -> set[str]:
+def any_figure_matches(figures: list, question: str, sources: list) -> bool:
+    """Is there a diagram in the notes that speaks to this question?
+
+    Asked before the answer is written, so the prompt can tell the model whether
+    a real diagram will be shown — and whether drawing an ASCII one is wasted work.
+    """
+    terms = _terms(question) - generic_terms(sources)
+    return any(figure_score(figure, terms) > 0 for figure in figures)
+
+
+def generic_terms(sources: list) -> set[str]:
     """Words that carry no information inside this subject.
 
     Every diagram in BCS303 Operating Systems is "about operating systems", so

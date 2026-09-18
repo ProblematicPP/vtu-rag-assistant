@@ -24,7 +24,7 @@ from vtu_rag.config import AgentSettings
 from vtu_rag.services.llm import ChatMessage, LLMError, LLMProvider, parse_json_object
 from vtu_rag.services.rag import prompts
 from vtu_rag.services.rag.context import format_context, scope_description
-from vtu_rag.services.rag.service import AnswerGenerator
+from vtu_rag.services.rag.service import AnswerGenerator, DiagramProbe, no_diagram
 from vtu_rag.services.search import SearchService
 
 logger = logging.getLogger(__name__)
@@ -37,11 +37,18 @@ def _step(node: str, **detail) -> dict:
 
 
 class AgentGraph:
-    def __init__(self, search: SearchService, llm: LLMProvider, settings: AgentSettings):
+    def __init__(
+        self,
+        search: SearchService,
+        llm: LLMProvider,
+        settings: AgentSettings,
+        diagram_probe: DiagramProbe | None = None,
+    ):
         self.search = search
         self.llm = llm
         self.settings = settings
         self.generator = AnswerGenerator(llm)
+        self.diagram_probe = diagram_probe or no_diagram
         self.graph: CompiledStateGraph = self._build()
 
     def _build(self) -> CompiledStateGraph:
@@ -180,8 +187,9 @@ class AgentGraph:
         ctx = runtime.context
         hits = state.get("relevant_hits") or state.get("hits") or []
         span = ctx.trace.span("generate", input={"hits": len(hits)})
+        diagram_shown = await self.diagram_probe(hits, state["question"])
         answer, sources = await self.generator.generate(
-            state["question"], hits, ctx.filters, ctx.trace
+            state["question"], hits, ctx.filters, ctx.trace, diagram_shown=diagram_shown
         )
         span.end(output={"answer_chars": len(answer), "sources": len(sources)})
         return {
