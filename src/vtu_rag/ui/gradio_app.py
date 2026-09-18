@@ -1,9 +1,9 @@
 """Student-facing UI. Talks to the FastAPI service over HTTP.
 
-Shaped like the exam it prepares you for rather than like a chat app: you pick a
-subject and module the way a question paper is organised, ask in the words a VTU
-paper would use, and get back an answer script — prose to learn, the diagram to
-redraw beside it, and the page of your own notes it came from.
+A conversation, in the shape people already know from Claude: the thread holds
+everything you have asked this session, the composer sits under it, and what to
+search — semester, subject, modules — lives in the sidebar. A question paper can
+be attached to the composer, and every question in it is answered into the thread.
 """
 
 import html
@@ -34,301 +34,210 @@ MODES = {
 
 FONTS = (
     "https://fonts.googleapis.com/css2?"
-    "family=Archivo:wght@400;500;600;700&"
-    "family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap"
+    "family=Inter:wght@400;500;600&"
+    "family=Source+Serif+4:opsz,wght@8..60,400;8..60,500&display=swap"
 )
 
 CSS = f"""
 @import url('{FONTS}');
 
 :root {{
-    --paper: #F3F1EC;
-    --sheet: #FFFFFF;
-    --ink: #000000;
-    --ink-2: #33363C;
-    --ink-3: #6B7078;
-    --rule: #D9D5CC;
-    --marker: #EAFF3C;
-    --pen: #14309B;
-    --ui: 'Archivo', system-ui, sans-serif;
-    --read: 'Newsreader', Georgia, serif;
+    --bg: #FAF9F5;
+    --sidebar: #F0EEE6;
+    --ink: #1F1E1D;
+    --ink-2: #3D3A36;
+    --ink-3: #85817A;
+    --line: #E3E0D8;
+    --bubble: #F0EEE6;
+    --accent: #D97757;
+    --ui: 'Inter', system-ui, -apple-system, sans-serif;
+    --serif: 'Source Serif 4', Georgia, serif;
 }}
 
-/* One deliberate look: photocopied paper. A prefers-color-scheme flip would
-   only repaint these tokens — Gradio's own controls stay light, which left
-   invisible text in the dropdowns. */
 .gradio-container, .gradio-container * {{ font-family: var(--ui); }}
 .gradio-container {{
-    max-width: 100% !important;
-    padding: 0 !important;
-    background: var(--paper) !important;
-    color: var(--ink) !important;
+    max-width: 100% !important; padding: 0 !important;
+    background: var(--bg) !important; color: var(--ink) !important;
 }}
 footer {{ display: none !important; }}
 
-/* Gradio paints its own controls dark when the OS asks for dark. This design is
-   a single paper look, so pin its surfaces and text back to the palette. */
+/* Gradio paints itself dark when the OS asks; this design is one warm light look */
 .dark, .dark .block, .dark .form, .dark .gradio-container {{
-    background: var(--paper) !important; color: var(--ink) !important;
+    background: var(--bg) !important; color: var(--ink) !important;
 }}
-.dark input, .dark textarea, .dark select,
-.dark .wrap, .dark .wrap-inner, .dark .secondary-wrap {{
-    background: var(--paper) !important; color: var(--ink) !important;
+.dark input, .dark textarea, .dark select, .dark .wrap, .dark .wrap-inner {{
+    background: var(--bg) !important; color: var(--ink) !important;
 }}
-.dark label, .dark label span, .dark .block .label-wrap span {{
-    color: var(--ink) !important; background: var(--sheet) !important;
+.dark label, .dark label span {{
+    color: var(--ink) !important; background: transparent !important;
 }}
-.dark input[type='radio'], .dark input[type='checkbox'] {{
-    background: var(--sheet) !important; border-color: var(--rule) !important;
-}}
-.dark label.selected, .dark input:checked + span {{
-    background: var(--marker) !important; color: var(--ink) !important;
-}}
-#masthead .wordmark b {{ color: var(--ink) !important; }}
 
-/* ---------------------------------------------------------------- masthead */
-#masthead {{
-    display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
-    padding: 16px 28px 14px;
-    border-bottom: 2px solid var(--ink);
-    background: var(--sheet);
+/* ------------------------------------------------------------------ sidebar */
+#sidebar {{
+    background: var(--sidebar) !important;
+    border-right: 1px solid var(--line);
+    padding: 16px 12px 24px !important;
+    min-height: 100vh;
+    gap: 2px !important;
 }}
-#masthead .wordmark {{
-    font-weight: 700; font-size: 17px; letter-spacing: -0.02em; color: var(--ink);
-}}
-#masthead .wordmark b {{ background: var(--marker); padding: 0 5px; }}
-#masthead .tag {{ font-size: 13px; color: var(--ink-3); }}
-
-/* ------------------------------------------------------------------- shell */
-#shell {{ gap: 0 !important; align-items: stretch !important; }}
-#scope {{
-    background: var(--sheet);
-    border-right: 1px solid var(--rule);
-    padding: 20px 18px 28px;
-    min-height: calc(100vh - 56px);
-}}
-#stage {{ padding: 26px 34px 40px; min-width: 0; }}
-
-#scope .block, #scope .form, #stage .block, #stage .form {{
+#sidebar .block, #sidebar .form {{
     background: transparent !important; border: none !important;
     box-shadow: none !important; padding: 0 !important;
 }}
-#scope .block:not(:last-child) {{ margin-bottom: 16px; }}
+#brand {{
+    display: flex; align-items: center; gap: 8px;
+    font-size: 15px; font-weight: 600; color: var(--ink);
+    padding: 4px 8px 14px;
+}}
+#brand .star {{ color: var(--accent); font-size: 17px; line-height: 1; }}
 
-#scope span[data-testid='block-info'], #scope label > span {{
-    font-size: 12px !important; font-weight: 600 !important; color: var(--ink) !important;
-}}
-#scope .wrap, #scope .wrap-inner, #scope input, #scope select {{
-    background: var(--paper) !important;
-    border-radius: 2px !important;
-    font-size: 13.5px !important;
-    box-shadow: none !important;
-}}
-#scope .wrap {{ border: 1px solid var(--rule) !important; }}
-#scope .wrap-inner, #scope input {{ border: none !important; }}
-#scope label.selected, #scope label:has(input:checked) {{
-    background: var(--marker) !important; border-color: var(--ink) !important;
-}}
-#scope .wrap label {{ font-size: 13px !important; }}
-
-/* --------------------------------------------------------------- ask field */
-#ask textarea {{
-    font-family: var(--ui) !important;
-    font-size: 17px !important;
-    line-height: 1.45 !important;
-    padding: 16px 18px !important;
-    color: var(--ink) !important;
-    background: var(--sheet) !important;
-    border: 2px solid var(--ink) !important;
-    border-radius: 2px !important;
-    box-shadow: 4px 4px 0 var(--rule) !important;
-}}
-#ask textarea::placeholder {{ color: var(--ink-3) !important; }}
-#ask textarea:focus {{ box-shadow: 4px 4px 0 var(--marker) !important; }}
-#ask button {{
-    background: var(--ink) !important; color: var(--sheet) !important;
-    border: none !important; border-radius: 2px !important;
-    width: 46px !important; height: 46px !important; align-self: center !important;
-}}
-#ask button:hover {{ background: var(--pen) !important; }}
-
-.chips {{ display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 0; }}
-.chips button {{
-    font-family: var(--ui); font-size: 12.5px; color: var(--ink-2);
-    background: var(--sheet); border: 1px solid var(--rule); border-radius: 2px;
-    padding: 6px 11px; cursor: pointer;
-}}
-.chips button:hover {{ border-color: var(--ink); background: var(--marker); color: var(--ink); }}
-
-/* ------------------------------------------------------------- empty state */
-.paper-note {{ margin-top: 34px; max-width: 62ch; }}
-#answer .paper-note h2, .paper-note h2 {{
-    font-family: var(--read) !important; font-weight: 400 !important;
-    font-size: 28px !important; line-height: 1.22 !important;
-    color: var(--ink) !important; margin: 0 0 12px !important;
-    letter-spacing: -0.01em !important;
-}}
-#answer .paper-note p, .paper-note p {{
-    font-size: 14.5px !important; line-height: 1.65 !important;
-    color: var(--ink-2) !important; margin: 0 0 20px !important;
-    font-family: var(--ui) !important;
-}}
-.paper-note .index {{
-    border-top: 1px solid var(--rule); padding-top: 14px;
-    font-size: 13px; color: var(--ink-3); line-height: 1.7;
-}}
-.paper-note .index b {{ color: var(--ink); font-weight: 600; }}
-
-/* ------------------------------------------------------------ answer sheet */
-.asked {{
-    font-size: 15px; font-weight: 500; line-height: 1.7; color: var(--ink);
-    margin: 22px 0 20px; max-width: 62ch;
-}}
-.asked span {{ background: var(--marker); padding: 3px 6px; box-decoration-break: clone; }}
-
-#answer {{ max-width: 66ch; }}
-#answer p, #answer li {{
-    font-family: var(--read) !important;
-    font-size: 17px !important;
-    line-height: 1.72 !important;
-    color: var(--ink-2) !important;
-}}
-#answer h1, #answer h2, #answer h3, #answer strong {{
-    font-family: var(--ui) !important; color: var(--ink) !important;
-}}
-#answer h1, #answer h2, #answer h3 {{
-    font-size: 14.5px !important; font-weight: 600 !important; margin: 26px 0 8px !important;
-}}
-#answer ul, #answer ol {{ padding-left: 20px !important; }}
-#answer li {{ margin: 6px 0 !important; }}
-#answer code {{ font-size: 14px !important; background: var(--paper) !important; }}
-
-/* ---------------------------------------------------------------- diagrams */
-.figures {{ display: grid; gap: 18px; }}
-.figures.strip {{
-    grid-template-columns: repeat(auto-fill, minmax(230px, 320px));
-    margin: 4px 0 8px; max-width: 78ch;
-}}
-#figure-slot {{ margin-top: 26px; }}
-#figure-slot .rail-title {{ max-width: 78ch; }}
-figure.fig {{ margin: 0; }}
-figure.fig a {{
-    display: block; background: var(--sheet); border: 1px solid var(--rule); padding: 10px;
-}}
-figure.fig a:hover {{ border-color: var(--ink); }}
-figure.fig img {{ display: block; width: 100%; height: auto; }}
-figure.fig figcaption {{
-    font-size: 12px; line-height: 1.5; color: var(--ink-3); margin-top: 7px;
-}}
-figure.fig figcaption b {{ display: block; color: var(--ink-2); font-weight: 500; }}
-.rail-title {{
-    font-size: 11.5px; font-weight: 700; color: var(--ink); margin: 0 0 12px;
-    padding-bottom: 6px; border-bottom: 2px solid var(--ink);
-}}
-
-/* ------------------------------------------------------- progress + status */
-.progress-bar, .progress-level-inner, .eta-bar {{
-    background: var(--ink) !important; color: var(--sheet) !important;
-}}
-.progress-text, .progress-level {{ color: var(--ink-3) !important; font-size: 11.5px !important; }}
-.wrap.default.full, .wrap.default.generating {{ background: transparent !important; }}
-
-/* ------------------------------------------------------------ tabs, buttons */
-.tab-container button, .tab-nav button, button.tab {{
+#sidebar button.new-chat {{
+    background: var(--bg) !important; color: var(--ink) !important;
+    border: 1px solid var(--line) !important; border-radius: 10px !important;
     font-size: 13.5px !important; font-weight: 500 !important;
-    color: var(--ink-3) !important; border: none !important;
-    border-bottom: 2px solid transparent !important; border-radius: 0 !important;
-    padding: 8px 2px !important; margin-right: 22px !important; background: none !important;
+    padding: 9px 12px !important; box-shadow: none !important; text-align: left !important;
+    margin-bottom: 16px !important;
 }}
-.tab-container button.selected, .tab-nav button.selected, button.tab.selected {{
-    color: var(--ink) !important; border-bottom-color: var(--ink) !important;
-}}
-.tab-container, .tab-nav {{ border-bottom: 1px solid var(--rule) !important; }}
-.tab-container.visually-hidden {{ border: none !important; }}
-
-#stage button.primary, #stage button.lg, #stage .download-button {{
-    background: var(--ink) !important; color: var(--sheet) !important;
-    border: none !important; border-radius: 2px !important;
-    font-size: 13.5px !important; font-weight: 600 !important;
-    padding: 11px 20px !important; box-shadow: 3px 3px 0 var(--rule) !important;
-}}
-#stage button.primary:hover, #stage .download-button:hover {{
-    background: var(--pen) !important; box-shadow: 3px 3px 0 var(--marker) !important;
-}}
-#stage button.secondary {{
-    background: var(--sheet) !important; color: var(--ink) !important;
-    border: 1px solid var(--rule) !important; border-radius: 2px !important;
-    font-size: 13.5px !important;
-}}
-#actions {{ gap: 12px !important; margin: 4px 0 8px; }}
-#actions > * {{ flex: 0 0 auto !important; min-width: 0 !important; }}
-
-/* ----------------------------------------------------- question paper tab */
-.lede {{
-    font-size: 14.5px; line-height: 1.6; color: var(--ink-2);
-    max-width: 62ch; margin: 18px 0 16px;
-}}
-#paper-drop {{ max-width: 520px; }}
-#paper-drop .block {{ border: 2px dashed var(--rule) !important; border-radius: 3px !important; }}
-
-ol.paper-qs {{ list-style: none; margin: 18px 0 20px; padding: 0; max-width: 70ch; }}
-ol.paper-qs li {{
-    display: flex; gap: 12px; align-items: baseline;
-    padding: 8px 0; border-bottom: 1px solid var(--rule);
-    font-size: 13.5px; line-height: 1.5; color: var(--ink-2);
-}}
-ol.paper-qs .qn {{
-    font-weight: 700; color: var(--ink); min-width: 34px; font-variant-numeric: tabular-nums;
-}}
-ol.paper-qs .qt {{ flex: 1; }}
-ol.paper-qs .qm {{ color: var(--ink-3); font-size: 12px; min-width: 22px; text-align: right; }}
-
-/* -------------------------------------------------------------- study sheet */
-#sheet {{ margin-top: 22px; }}
-section.qa {{
-    padding: 22px 0 18px; border-top: 2px solid var(--ink); max-width: 78ch;
-}}
-section.qa h3 {{
-    font-size: 15px !important; font-weight: 700 !important; color: var(--ink) !important;
-    margin: 0 0 6px !important; display: flex; gap: 10px; align-items: baseline;
-}}
-section.qa h3 .qm {{ font-size: 11.5px; font-weight: 500; color: var(--ink-3); }}
-section.qa .qtext {{
-    font-size: 14.5px; line-height: 1.55; color: var(--ink); margin: 0 0 14px;
-    background: var(--marker); display: inline; box-decoration-break: clone; padding: 2px 5px;
-}}
-section.qa .qbody {{ margin-top: 14px; }}
-section.qa .qbody p, section.qa .qbody li {{
-    font-family: var(--read); font-size: 15.5px; line-height: 1.7; color: var(--ink-2);
-    margin: 0 0 8px;
-}}
-section.qa .qbody h4 {{
-    font-size: 13px; font-weight: 600; color: var(--ink); margin: 16px 0 6px;
-}}
-section.qa .qbody ul {{ margin: 0 0 10px; padding-left: 20px; }}
-figure.fig.inline {{ max-width: 380px; margin: 14px 0 6px; }}
-section.qa .from {{
-    display: inline-block; margin-top: 10px; font-size: 12px;
-    color: var(--pen); text-decoration: none; border-bottom: 1px solid currentColor;
+#sidebar button.new-chat:hover {{
+    background: #fff !important; border-color: var(--ink-3) !important;
 }}
 
-/* ----------------------------------------------------------------- sources */
-.whence {{
-    margin-top: 30px; padding-top: 14px; border-top: 1px solid var(--rule);
-    font-size: 13px; line-height: 1.7; color: var(--ink-3); max-width: 66ch;
+.side-label {{
+    font-size: 11.5px; font-weight: 600; color: var(--ink-3);
+    padding: 0 8px; margin: 14px 0 6px; letter-spacing: 0.01em;
 }}
-.whence a {{ color: var(--pen); text-decoration: none; border-bottom: 1px solid currentColor; }}
-.whence .run {{ display: block; margin-top: 6px; font-size: 11.5px; color: var(--ink-3); }}
+#recents {{ display: flex; flex-direction: column; gap: 1px; }}
+#recents button {{
+    background: transparent !important; border: none !important; box-shadow: none !important;
+    text-align: left !important; font-size: 13px !important; color: var(--ink-2) !important;
+    padding: 7px 8px !important; border-radius: 8px !important;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}}
+#recents button:hover {{ background: rgba(0, 0, 0, 0.05) !important; }}
+#recents .empty {{ font-size: 12.5px; color: var(--ink-3); padding: 4px 8px; line-height: 1.5; }}
 
-.thinking {{ font-size: 14px; color: var(--ink-3); }}
+#sidebar label > span:first-child {{
+    font-size: 12px !important; font-weight: 500 !important; color: var(--ink-3) !important;
+    margin-bottom: 4px !important;
+}}
+#sidebar .wrap, #sidebar input, #sidebar .wrap-inner {{
+    background: var(--bg) !important; border-radius: 8px !important;
+    font-size: 13px !important; box-shadow: none !important;
+}}
+#sidebar .wrap {{ border: 1px solid var(--line) !important; }}
+#sidebar .wrap-inner, #sidebar input {{ border: none !important; }}
+#sidebar .block:not(:last-child) {{ margin-bottom: 12px !important; }}
+#sidebar [data-testid='checkbox-group'] label, #sidebar .gr-check-radio label {{
+    font-size: 12.5px !important;
+}}
+#index-note {{ font-size: 11.5px; color: var(--ink-3); line-height: 1.55; padding: 10px 8px 0; }}
+#index-note b {{ color: var(--ink-2); font-weight: 600; }}
 
-:focus-visible {{ outline: 2px solid var(--pen) !important; outline-offset: 2px; }}
+/* ------------------------------------------------------------------- thread */
+#main {{ padding: 0 !important; min-width: 0; background: var(--bg) !important; }}
+#thread {{
+    border: none !important; background: transparent !important;
+    max-width: 760px; margin: 0 auto !important; padding: 26px 20px 0 !important;
+}}
+#thread .message-row {{ max-width: 100% !important; }}
+#thread .user-row, #thread .user {{
+    background: var(--bubble) !important; border: none !important;
+    border-radius: 14px !important; color: var(--ink) !important;
+    font-size: 15px !important; line-height: 1.55 !important; padding: 11px 15px !important;
+}}
+#thread .bot-row, #thread .bot {{
+    background: transparent !important; border: none !important; padding: 2px 0 10px !important;
+}}
+#thread .bot p, #thread .bot li {{
+    font-size: 15.5px !important; line-height: 1.68 !important; color: var(--ink-2) !important;
+}}
+#thread .bot strong {{ color: var(--ink) !important; font-weight: 600 !important; }}
+#thread .bot h1, #thread .bot h2, #thread .bot h3, #thread .bot h4 {{
+    font-size: 15px !important; font-weight: 600 !important;
+    color: var(--ink) !important; margin: 18px 0 6px !important;
+}}
+#thread .bot img {{
+    border: 1px solid var(--line); border-radius: 10px; background: #fff;
+    padding: 8px; max-width: 420px; margin: 10px 0 4px;
+}}
+#thread .bot em {{
+    color: var(--ink-3) !important; font-style: normal !important; font-size: 12.5px !important;
+}}
+#thread .bot a {{ color: var(--accent) !important; text-decoration: none !important; }}
+#thread .bot a:hover {{ text-decoration: underline !important; }}
+#thread .placeholder-content, #thread .placeholder {{ display: none !important; }}
+
+/* greeting shown before the first question */
+#greeting {{
+    max-width: 760px; margin: 0 auto; padding: 22vh 20px 0; text-align: center;
+    min-height: calc(100vh - 330px);
+}}
+#greeting .star {{ color: var(--accent); font-size: 26px; display: block; margin-bottom: 14px; }}
+#greeting h1 {{
+    font-family: var(--serif) !important; font-weight: 400 !important;
+    font-size: 30px !important; color: var(--ink) !important; margin: 0 0 10px !important;
+}}
+#greeting p {{ font-size: 14px !important; color: var(--ink-3) !important; margin: 0 !important; }}
+
+/* ----------------------------------------------------------------- composer */
+#composer {{
+    max-width: 760px; margin: 0 auto !important; padding: 10px 20px 22px !important;
+    gap: 8px !important;
+}}
+#composer .block, #composer .form, #ask, #ask > div {{
+    background: transparent !important; border: none !important; box-shadow: none !important;
+    padding: 0 !important;
+}}
+#ask textarea {{
+    font-size: 15.5px !important; line-height: 1.5 !important;
+    height: auto !important; min-height: 58px !important;
+    padding: 16px 16px !important; color: var(--ink) !important;
+    background: #FFFFFF !important;
+    border: 1px solid var(--line) !important; border-radius: 16px !important;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04) !important;
+}}
+#ask textarea:focus {{ border-color: var(--ink-3) !important; }}
+#ask textarea::placeholder {{ color: var(--ink-3) !important; }}
+#ask button {{
+    background: var(--accent) !important; color: #fff !important;
+    border: none !important; border-radius: 10px !important;
+    width: 34px !important; height: 34px !important; align-self: flex-end !important;
+    margin-bottom: 12px !important;
+}}
+#ask button:hover {{ filter: brightness(0.94); }}
+
+#tools {{ gap: 8px !important; justify-content: flex-start !important; flex-wrap: wrap; }}
+#tools > *, #tools .block {{
+    flex: 0 0 auto !important; width: auto !important; min-width: 0 !important;
+}}
+#tools button {{
+    background: transparent !important; color: var(--ink-3) !important;
+    border: 1px solid var(--line) !important; border-radius: 9px !important;
+    font-size: 12.5px !important; font-weight: 500 !important;
+    padding: 7px 12px !important; box-shadow: none !important;
+    min-width: 0 !important; width: auto !important;
+}}
+#tools button:hover {{ background: var(--sidebar) !important; color: var(--ink) !important; }}
+#tools .download-button {{
+    border-color: var(--accent) !important; color: var(--accent) !important;
+}}
+
+.chips {{ display: flex; flex-wrap: wrap; gap: 7px; justify-content: center; margin: 16px 0 0; }}
+.chips button {{
+    font-size: 12.5px; color: var(--ink-2); background: var(--bg);
+    border: 1px solid var(--line); border-radius: 999px; padding: 7px 13px; cursor: pointer;
+}}
+.chips button:hover {{ background: #fff; border-color: var(--ink-3); }}
+
+/* Gradio's own chrome, toned to this palette */
+.progress-bar, .progress-level-inner {{ background: var(--accent) !important; }}
+.progress-text, .progress-level {{ color: var(--ink-3) !important; font-size: 11px !important; }}
+:focus-visible {{ outline: 2px solid var(--accent) !important; outline-offset: 2px; }}
 @media (prefers-reduced-motion: reduce) {{
     * {{ animation: none !important; transition: none !important; }}
 }}
-@media (max-width: 900px) {{
-    #scope {{ min-height: auto; border-right: none; border-bottom: 1px solid var(--rule); }}
-    #stage {{ padding: 20px 18px 32px; }}
+@media (max-width: 860px) {{
+    #sidebar {{ min-height: auto; border-right: none; border-bottom: 1px solid var(--line); }}
 }}
 """
 
@@ -363,10 +272,10 @@ def load_modules(subject_code: str) -> list[tuple[str, int]]:
     for module in data["modules"]:
         label = f"M{module['number']}"
         if module["title"]:
-            label += f"  {module['title'][:36]}"
+            label += f" · {module['title'][:28]}"
         # Say plainly which modules have nothing to search yet
         if not module["indexed_notes"]:
-            label += "  (empty)"
+            label += " (empty)"
         choices.append((label, module["number"]))
     return choices
 
@@ -387,102 +296,73 @@ def index_summary() -> str:
     search = "keyword and meaning" if health["services"]["embeddings"]["ok"] else "keyword only"
     return (
         f"<b>{len(indexed)}</b> note{'s' if len(indexed) != 1 else ''} from "
-        f"<b>{len(subjects)}</b> subject{'s' if len(subjects) != 1 else ''}, "
-        f"<b>{sections}</b> searchable sections. Matching by {search}."
+        f"<b>{len(subjects)}</b> subject{'s' if len(subjects) != 1 else ''} · "
+        f"<b>{sections}</b> sections · matching by {search}"
     )
 
 
 # ----------------------------------------------------------------- rendering
-def empty_state() -> str:
-    return (
-        "<div class='paper-note'>"
-        "<h2>Answers from your own notes, and nothing else.</h2>"
-        "<p>Ask the way a VTU paper asks — “Explain dual-mode operation with a neat diagram”, "
-        "“Differentiate between paging and segmentation”. You get the answer, the diagram to "
-        "redraw, and the page of your notes it came from.</p>"
-        f"<div class='index'>{index_summary()}</div>"
-        "</div>"
-    )
+def answer_markdown(data: dict[str, Any]) -> str:
+    """An answer as one chat message: prose, then diagrams, then where it came from."""
+    parts = [data.get("answer") or "_No answer came back._"]
 
-
-def format_question(question: str) -> str:
-    return f"<p class='asked'><span>{html.escape(question)}</span></p>"
-
-
-def format_figures(figures: list[dict[str, Any]]) -> str:
-    if not figures:
-        return ""
-    blocks = ["<p class='rail-title'>Diagrams to redraw</p><div class='figures strip'>"]
-    for figure in figures:
+    for figure in data.get("figures") or []:
         url = f"{PUBLIC_API}{figure['url']}"
         caption = figure.get("caption") or (
             f"Scanned page {figure['page']}"
             if figure.get("kind") == "page"
-            else f"Diagram, page {figure['page']}"
+            else f"Diagram to redraw — page {figure['page']}"
         )
-        where = f"{figure['subject_code']} module {figure['module_number']}, page {figure['page']}"
-        blocks.append(
-            f"<figure class='fig'><a href='{url}' target='_blank' rel='noopener'>"
-            f"<img src='{url}' alt='{html.escape(caption)}' loading='lazy'></a>"
-            f"<figcaption><b>{html.escape(caption)}</b>{html.escape(where)}</figcaption></figure>"
-        )
-    blocks.append("</div>")
-    return "".join(blocks)
+        parts.append(f"\n![{caption}]({url})\n\n*{caption}*")
 
-
-def format_whence(data: dict[str, Any]) -> str:
-    notes = data.get("notes") or []
-    if not notes and data.get("in_scope") is False:
-        return "<p class='whence'>Nothing was searched — this looks outside the syllabus.</p>"
-    if not notes:
-        return ""
-
-    links = []
-    for note in notes:
+    footer = []
+    for note in data.get("notes") or []:
         pages = note.get("pages") or []
         anchor = f"#page={pages[0]}" if pages else ""
-        page_text = ""
-        if pages:
-            page_text = (
-                f", page {pages[0]}"
-                if len(pages) == 1
-                else f", pages {', '.join(map(str, pages[:6]))}"
-            )
-        links.append(
-            f"<a href='{PUBLIC_API}{note['url']}{anchor}' target='_blank' rel='noopener'>"
-            f"{note['subject_code']} module {note['module_number']} notes</a>{page_text}"
+        where = f", p. {pages[0]}" if pages else ""
+        footer.append(
+            f"[{note['subject_code']} module {note['module_number']} notes"
+            f"{where}]({PUBLIC_API}{note['url']}{anchor})"
         )
-
     run = []
+    if data.get("in_scope") is False:
+        run.append("outside the syllabus, nothing searched")
     if data.get("rewritten_queries"):
-        run.append(f"searched again as “{html.escape(data['rewritten_queries'][-1])}”")
+        run.append(f"searched again as “{data['rewritten_queries'][-1]}”")
     if data.get("search_mode"):
         run.append(f"{data['search_mode']} search")
-    run.append("from cache" if data.get("cached") else f"{data.get('latency_ms', 0) / 1000:.1f}s")
+    if data.get("cached"):
+        run.append("from cache")
+    elif data.get("latency_ms"):
+        run.append(f"{data['latency_ms'] / 1000:.1f}s")
 
-    return (
-        f"<p class='whence'>Taken from {'; '.join(links)}"
-        f"<span class='run'>{' · '.join(run)}</span></p>"
+    if footer or run:
+        line = " · ".join(footer + run)
+        parts.append(f"\n\n*From your notes: {line}*" if footer else f"\n\n*{line}*")
+    return "".join(parts)
+
+
+def recents_html(questions: list[str]) -> str:
+    if not questions:
+        return "<div id='recents'><p class='empty'>Questions you ask will be listed here.</p></div>"
+    items = "".join(
+        f"<button type='button' title='{html.escape(q)}'>{html.escape(q[:46])}</button>"
+        for q in reversed(questions[-12:])
     )
+    return f"<div id='recents'>{items}</div>"
+
+
+GREETING = (
+    "<div id='greeting'><span class='star'>✳</span>"
+    "<h1>What are we revising?</h1>"
+    "<p>Answers come only from the notes you've added — never from anywhere else.</p>"
+    "</div>"
+)
 
 
 # -------------------------------------------------------------------- asking
-async def ask(
-    question: str,
-    semester: str,
-    subject_code: str | None,
-    modules: list[int],
-    mode_label: str,
-) -> AsyncIterator[tuple]:
-    asked = (question or "").strip()
-    if len(asked) < 3:
-        yield (gr.skip(),) * 5
-        return
-
-    yield format_question(asked), "<p class='thinking'>Reading your notes…</p>", "", "", ""
-
+def _filters(semester: str, subject_code: str | None, modules: list[int]) -> dict[str, Any]:
     payload: dict[str, Any] = {
-        "question": asked,
         "branch": settings.default_branch,
         "scheme": settings.default_scheme,
         "module_numbers": modules or [],
@@ -491,204 +371,113 @@ async def ask(
         payload["semester"] = int(semester)
     if subject_code and subject_code != ALL:
         payload["subject_code"] = subject_code
+    return payload
+
+
+async def ask(
+    question: str,
+    history: list[dict[str, Any]],
+    recents: list[str],
+    semester: str,
+    subject_code: str | None,
+    modules: list[int],
+    mode_label: str,
+) -> AsyncIterator[tuple]:
+    asked = (question or "").strip()
+    history = list(history or [])
+    if len(asked) < 3:
+        yield gr.skip(), gr.skip(), gr.skip(), gr.skip(), gr.skip()
+        return
+
+    recents = [*(recents or []), asked]
+    history.append({"role": "user", "content": asked})
+    history.append({"role": "assistant", "content": "_Reading your notes…_"})
+    yield history, recents, recents_html(recents), "", gr.update(visible=False)
 
     endpoint = MODES.get(mode_label, "agentic-ask")
+    payload = {"question": asked, **_filters(semester, subject_code, modules)}
     try:
-        async with httpx.AsyncClient(timeout=300) as client:
+        async with httpx.AsyncClient(timeout=600) as client:
             response = await client.post(f"{API}/api/v1/{endpoint}", json=payload)
+        data = response.json() if response.status_code < 400 else {}
+        if response.status_code >= 400:
+            data = {"answer": f"That didn't work: {data.get('detail', response.status_code)}"}
     except httpx.HTTPError as exc:
         logger.warning("API unreachable: %s", exc)
-        yield (
-            format_question(asked),
-            f"The API at {API} isn't responding. Check that the stack is running.",
-            "",
-            "",
-            "",
-        )
-        return
+        data = {"answer": f"I can't reach the API at {API}. Is the stack running?"}
 
-    if response.status_code >= 400:
-        detail = response.json().get("detail", "") if response.content else ""
-        yield format_question(asked), f"That didn't work. {detail}", "", "", ""
-        return
-
-    data = response.json()
-    yield (
-        format_question(asked),
-        data["answer"],
-        format_figures(data.get("figures") or []),
-        format_whence(data),
-        "",
-    )
-
-
-# ---------------------------------------------------------------------- app
-STARTERS = [
-    "Explain dual-mode operation with a neat diagram",
-    "What is a system call? List its types",
-    "Differentiate between monolithic and microkernel structures",
-]
-
-# Clicking a starter fills the ask box — plain JS, no round trip to the server
-CHIP_JS = """() => {
-    document.querySelectorAll('.chips button').forEach((chip) => {
-        chip.addEventListener('click', () => {
-            const box = document.querySelector('#ask textarea');
-            box.value = chip.textContent;
-            box.dispatchEvent(new Event('input', { bubbles: true }));
-            box.focus();
-        });
-    });
-}"""
-
-
-def read_paper_file(path: str | None) -> tuple[list[dict[str, Any]], str, str]:
-    """Sends the uploaded paper to the API and lists the questions it found."""
-    if not path:
-        return [], "", ""
-    name = Path(path).name
-    try:
-        with open(path, "rb") as handle:
-            response = httpx.post(
-                f"{API}/api/v1/papers/extract",
-                files={"file": (name, handle, "application/octet-stream")},
-                timeout=600,
-            )
-    except httpx.HTTPError as exc:
-        logger.warning("Paper upload failed: %s", exc)
-        return [], f"<p class='thinking'>Couldn't reach the API: {exc}</p>", ""
-
-    if response.status_code >= 400:
-        detail = response.json().get("detail", "") if response.content else ""
-        return [], f"<p class='thinking'>{html.escape(str(detail))}</p>", ""
-
-    data = response.json()
-    questions = data["questions"]
-    if not questions:
-        return (
-            [],
-            "<p class='thinking'>No questions found in that file. VTU papers number their "
-            "parts like “Q.1 a.” — a clearer scan usually fixes this.</p>",
-            "",
-        )
-    return questions, format_paper_questions(questions), data.get("title", "Question paper")
-
-
-def format_paper_questions(questions: list[dict[str, Any]]) -> str:
-    marks = sum(q.get("marks") or 0 for q in questions)
-    rows = "".join(
-        f"<li><span class='qn'>{html.escape(q['number'])}</span>"
-        f"<span class='qt'>{html.escape(q['text'])}</span>"
-        f"<span class='qm'>{q['marks'] or ''}</span></li>"
-        for q in questions
-    )
-    return (
-        f"<p class='rail-title'>{len(questions)} questions found"
-        f"{f' · {marks} marks' if marks else ''}</p>"
-        f"<ol class='paper-qs'>{rows}</ol>"
-    )
-
-
-def _sheet_figure(figure: dict[str, Any]) -> str:
-    url = f"{PUBLIC_API}{figure['url']}"
-    caption = figure.get("caption") or f"Diagram, page {figure['page']}"
-    return (
-        f"<figure class='fig inline'><a href='{url}' target='_blank' rel='noopener'>"
-        f"<img src='{url}' alt='diagram' loading='lazy'></a>"
-        f"<figcaption>{html.escape(caption)}</figcaption></figure>"
-    )
-
-
-def _answer_block(question: dict[str, Any], data: dict[str, Any]) -> str:
-    """One question and its answer, laid out as a revision sheet entry."""
-    marks = f"<span class='qm'>{question['marks']} marks</span>" if question.get("marks") else ""
-    figures = "".join(_sheet_figure(f) for f in data.get("figures") or [])
-    notes = data.get("notes") or []
-    where = ""
-    if notes:
-        note = notes[0]
-        pages = note.get("pages") or []
-        anchor = f"#page={pages[0]}" if pages else ""
-        where = (
-            f"<a class='from' href='{PUBLIC_API}{note['url']}{anchor}' target='_blank' "
-            f"rel='noopener'>{note['subject_code']} module {note['module_number']} notes</a>"
-        )
-    body = md_to_html(data.get("answer", ""))
-    return (
-        f"<section class='qa'><h3>Q{html.escape(question['number'])}{marks}</h3>"
-        f"<p class='qtext'>{html.escape(question['text'])}</p>"
-        f"<div class='qbody'>{body}</div>"
-        f"{f'<div class=figures>{figures}</div>' if figures else ''}"
-        f"{where}</section>"
-    )
-
-
-_MD_HEADING = re.compile(r"^#{1,6}\s+")
-_MD_BULLET = re.compile(r"^[-*•+o]\s+")
-_MD_BOLD = re.compile(r"\*\*(.+?)\*\*")
-
-
-def md_to_html(text: str) -> str:
-    """Just enough markdown for answers: headings, bullets, bold."""
-    out: list[str] = []
-    in_list = False
-
-    def close_list() -> None:
-        nonlocal in_list
-        if in_list:
-            out.append("</ul>")
-            in_list = False
-
-    for raw in text.splitlines():
-        line = raw.strip()
-        if not line:
-            continue
-        line = _MD_BOLD.sub(r"<strong>\1</strong>", html.escape(line))
-        if _MD_HEADING.match(line):
-            close_list()
-            out.append(f"<h4>{_MD_HEADING.sub('', line)}</h4>")
-        elif _MD_BULLET.match(line):
-            if not in_list:
-                out.append("<ul>")
-                in_list = True
-            out.append(f"<li>{_MD_BULLET.sub('', line)}</li>")
-        else:
-            close_list()
-            out.append(f"<p>{line}</p>")
-    close_list()
-    return "".join(out)
+    history[-1] = {"role": "assistant", "content": answer_markdown(data)}
+    yield history, recents, recents_html(recents), "", gr.update(visible=False)
 
 
 async def solve_paper(
-    questions: list[dict[str, Any]],
-    title: str,
+    file_path: str | None,
+    history: list[dict[str, Any]],
     semester: str,
     subject_code: str | None,
     modules: list[int],
 ) -> AsyncIterator[tuple]:
-    """Answers each question in turn so the sheet fills in as it goes."""
-    if not questions:
+    """Attaching a question paper answers every question into the thread."""
+    history = list(history or [])
+    if not file_path:
         yield gr.skip(), gr.skip(), gr.skip()
         return
 
-    filters: dict[str, Any] = {
-        "branch": settings.default_branch,
-        "scheme": settings.default_scheme,
-        "module_numbers": modules or [],
-    }
-    if semester != ALL:
-        filters["semester"] = int(semester)
-    if subject_code and subject_code != ALL:
-        filters["subject_code"] = subject_code
+    name = Path(file_path).name
+    history.append({"role": "user", "content": f"📄 **{name}** — answer every question"})
+    history.append({"role": "assistant", "content": "_Reading the question paper…_"})
+    yield history, gr.update(visible=False), gr.skip()
 
-    blocks: list[str] = []
-    async with httpx.AsyncClient(timeout=600) as client:
-        for index, question in enumerate(questions, start=1):
-            progress = (
-                f"<p class='thinking'>Answering {index} of {len(questions)} — "
-                f"Q{html.escape(question['number'])}…</p>"
+    try:
+        with open(file_path, "rb") as handle:
+            extract = httpx.post(
+                f"{API}/api/v1/papers/extract",
+                files={"file": (name, handle, "application/octet-stream")},
+                timeout=900,
             )
-            yield "".join(blocks) + progress, gr.update(interactive=False), gr.skip()
+        payload = extract.json()
+    except httpx.HTTPError as exc:
+        history[-1] = {"role": "assistant", "content": f"I couldn't read that file: {exc}"}
+        yield history, gr.update(visible=False), gr.skip()
+        return
+
+    if extract.status_code >= 400:
+        history[-1] = {
+            "role": "assistant",
+            "content": f"I couldn't read that paper. {payload.get('detail', '')}",
+        }
+        yield history, gr.update(visible=False), gr.skip()
+        return
+
+    questions = payload.get("questions") or []
+    if not questions:
+        history[-1] = {
+            "role": "assistant",
+            "content": "I couldn't find any questions in that file. VTU papers number their "
+            "parts like “Q.1 a.” — a straighter, sharper scan usually fixes it.",
+        }
+        yield history, gr.update(visible=False), gr.skip()
+        return
+
+    marks = sum(q.get("marks") or 0 for q in questions)
+    listing = "\n".join(
+        f"**Q{q['number']}** {q['text']}" + (f"  ·  {q['marks']} marks" if q.get("marks") else "")
+        for q in questions
+    )
+    history[-1] = {
+        "role": "assistant",
+        "content": f"Found **{len(questions)} questions**"
+        + (f" worth {marks} marks" if marks else "")
+        + f" in {name}. Answering them now.\n\n{listing}",
+    }
+    yield history, gr.update(visible=False), gr.skip()
+
+    filters = _filters(semester, subject_code, modules)
+    async with httpx.AsyncClient(timeout=900) as client:
+        for index, question in enumerate(questions, start=1):
+            heading = f"**Q{question['number']}** · {question['text']}"
+            history.append({"role": "assistant", "content": f"{heading}\n\n_Answering…_"})
+            yield history, gr.update(visible=False), gr.skip()
 
             try:
                 response = await client.post(
@@ -698,19 +487,25 @@ async def solve_paper(
             except httpx.HTTPError as exc:
                 logger.warning("Question %s failed: %s", question["number"], exc)
                 data = {}
-
             if not data.get("answer"):
-                data = {"answer": "_Couldn't answer this one from the indexed notes._"}
-            blocks.append(_answer_block(question, data))
-            yield "".join(blocks), gr.update(interactive=False), gr.skip()
+                data = {"answer": "_I couldn't answer this one from the indexed notes._"}
 
-    # Everything is answered and cached, so the PDF pass is quick
-    pdf_path = await build_paper_pdf(questions, title, filters)
-    yield (
-        "".join(blocks),
-        gr.update(interactive=True),
-        gr.update(value=pdf_path, visible=bool(pdf_path)),
+            history[-1] = {
+                "role": "assistant",
+                "content": f"{heading}\n\n{answer_markdown(data)}",
+            }
+            logger.info("Answered %d of %d", index, len(questions))
+            yield history, gr.update(visible=False), gr.skip()
+
+    pdf_path = await build_paper_pdf(questions, Path(name).stem, filters)
+    history.append(
+        {
+            "role": "assistant",
+            "content": "All questions answered. **Download as PDF** below the composer gives you "
+            "the whole set to print, diagrams included.",
+        }
     )
+    yield history, gr.update(value=pdf_path, visible=bool(pdf_path)), gr.skip()
 
 
 async def build_paper_pdf(
@@ -728,87 +523,118 @@ async def build_paper_pdf(
         return None
 
     safe = re.sub(r"[^A-Za-z0-9 _-]", "", title or "answers").strip() or "answers"
-    path = Path(tempfile.gettempdir()) / f"{safe} — answers.pdf"
+    path = Path(tempfile.gettempdir()) / f"{safe} - answers.pdf"
     path.write_bytes(response.content)
     return str(path)
 
 
+# ---------------------------------------------------------------------- app
+STARTERS = [
+    "Explain dual-mode operation with a neat diagram",
+    "What is a system call? List its types",
+    "Difference between monolithic and microkernel structures",
+]
+
+# Clicking a starter chip or a recent question fills the composer
+FILL_JS = """() => {
+    const fill = (text) => {
+        const box = document.querySelector('#ask textarea');
+        box.value = text;
+        box.dispatchEvent(new Event('input', { bubbles: true }));
+        box.focus();
+    };
+    document.addEventListener('click', (event) => {
+        const chip = event.target.closest('.chips button');
+        if (chip) { fill(chip.textContent.trim()); return; }
+        const recent = event.target.closest('#recents button');
+        if (recent) fill(recent.getAttribute('title') || recent.textContent.trim());
+    });
+}"""
+
+
 def build_app() -> gr.Blocks:
     with gr.Blocks(title="VTU Exam Buddy", fill_width=True) as demo:
-        gr.HTML(
-            "<div id='masthead'>"
-            "<span class='wordmark'>VTU <b>Exam Buddy</b></span>"
-            f"<span class='tag'>{settings.default_branch.upper()} · "
-            f"{settings.default_scheme} scheme</span>"
-            "</div>"
-        )
+        recents_state = gr.State([])
 
-        with gr.Row(elem_id="shell", equal_height=False):
-            # ------------------------------------------------------ scope rail
-            with gr.Column(scale=2, min_width=225, elem_id="scope"):
+        with gr.Row(equal_height=False):
+            # ---------------------------------------------------------- sidebar
+            with gr.Column(scale=2, min_width=235, elem_id="sidebar"):
+                gr.HTML("<div id='brand'><span class='star'>✳</span> VTU Exam Buddy</div>")
+                new_chat = gr.Button("＋  New question", elem_classes="new-chat")
+
+                gr.HTML("<p class='side-label'>What to search</p>")
                 semester = gr.Dropdown(
                     [ALL] + [str(i) for i in range(1, 9)], value="3", label="Semester"
                 )
                 subject = gr.Dropdown([(ALL, ALL)] + load_subjects("3"), value=ALL, label="Subject")
                 modules = gr.CheckboxGroup([], label="Modules")
-                mode = gr.Radio(
-                    list(MODES),
-                    value="Careful",
-                    label="Answering",
-                    info="Careful checks the question is on-syllabus and searches again when "
-                    "the results are weak. Quick answers in one pass.",
-                )
+                mode = gr.Radio(list(MODES), value="Careful", label="Answering")
 
-            # ----------------------------------------------------------- stage
-            with gr.Column(scale=8, elem_id="stage"), gr.Tabs():
-                with gr.Tab("One question"):
+                gr.HTML("<p class='side-label'>This session</p>")
+                recents = gr.HTML(recents_html([]))
+                # Read at page load, not at startup: the API may still be booting
+                index_note = gr.HTML("<p id='index-note'>Checking what's indexed…</p>")
+
+            # ----------------------------------------------------------- thread
+            with gr.Column(scale=9, elem_id="main"):
+                greeting = gr.HTML(GREETING)
+                thread = gr.Chatbot(
+                    elem_id="thread",
+                    show_label=False,
+                    height="calc(100vh - 330px)",
+                    buttons=["copy"],
+                    visible=False,
+                )
+                with gr.Column(elem_id="composer"):
                     question = gr.Textbox(
-                        placeholder="Ask a question from your notes",
+                        placeholder="Ask anything from your notes",
                         show_label=False,
                         submit_btn=True,
                         elem_id="ask",
-                        max_lines=3,
+                        max_lines=6,
                     )
-                    gr.HTML(
+                    with gr.Row(elem_id="tools"):
+                        paper = gr.UploadButton(
+                            "📄  Attach a question paper",
+                            file_types=[".pdf", ".png", ".jpg", ".jpeg", ".webp"],
+                            size="sm",
+                        )
+                        download = gr.DownloadButton("Download answers as PDF", visible=False)
+                    starters = gr.HTML(
                         "<div class='chips'>"
                         + "".join(
                             f"<button type='button'>{html.escape(s)}</button>" for s in STARTERS
                         )
                         + "</div>"
                     )
-                    asked = gr.HTML("")
-                    answer = gr.Markdown(empty_state(), elem_id="answer")
-                    figure_html = gr.HTML("", elem_id="figure-slot")
-                    whence = gr.HTML("")
 
-                with gr.Tab("Whole question paper"):
-                    gr.HTML(
-                        "<p class='lede'>Upload a question paper — a PDF or a photo of one — "
-                        "and get every question answered from your notes, ready to print.</p>"
-                    )
-                    paper_file = gr.File(
-                        label="Question paper (PDF or photo)",
-                        file_types=[".pdf", ".png", ".jpg", ".jpeg", ".webp"],
-                        elem_id="paper-drop",
-                    )
-                    found = gr.HTML("")
-                    with gr.Row(elem_id="actions"):
-                        solve_btn = gr.Button(
-                            "Answer every question", variant="primary", scale=0, min_width=210
-                        )
-                        download = gr.DownloadButton(
-                            "Download as PDF", visible=False, scale=0, min_width=180
-                        )
-                    sheet = gr.HTML("", elem_id="sheet")
-                    questions_state = gr.State([])
-                    title_state = gr.State("Question paper")
+        # ------------------------------------------------------------- wiring
+        def open_thread() -> tuple:
+            """The greeting gives way to the thread once there is something in it."""
+            return gr.update(visible=False), gr.update(visible=False), gr.update(visible=True)
 
-        # ------------------------------------------------------------ wiring
         question.submit(
             ask,
-            [question, semester, subject, modules, mode],
-            [asked, answer, figure_html, whence, question],
-        )
+            [question, thread, recents_state, semester, subject, modules, mode],
+            [thread, recents_state, recents, question, download],
+        ).then(open_thread, None, [greeting, starters, thread])
+
+        paper.upload(
+            solve_paper,
+            [paper, thread, semester, subject, modules],
+            [thread, download, question],
+        ).then(open_thread, None, [greeting, starters, thread])
+
+        def start_over():
+            return (
+                [],
+                "",
+                gr.update(visible=True),
+                gr.update(visible=True),
+                gr.update(visible=False),
+            )
+
+        new_chat.click(start_over, None, [thread, question, greeting, starters, download])
 
         def on_semester(sem: str):
             return (
@@ -820,16 +646,8 @@ def build_app() -> gr.Blocks:
         subject.change(
             lambda code: gr.update(choices=load_modules(code), value=[]), subject, modules
         )
-        paper_file.change(
-            read_paper_file, paper_file, [questions_state, found, title_state], show_progress="full"
-        )
-        solve_btn.click(
-            solve_paper,
-            [questions_state, title_state, semester, subject, modules],
-            [sheet, solve_btn, download],
-        )
-
-        demo.load(None, None, None, js=CHIP_JS)
+        demo.load(lambda: f"<p id='index-note'>{index_summary()}</p>", None, index_note)
+        demo.load(None, None, None, js=FILL_JS)
     return demo
 
 

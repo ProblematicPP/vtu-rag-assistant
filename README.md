@@ -49,7 +49,7 @@ the original PDF at page 9.
 ```mermaid
 flowchart LR
     subgraph Clients
-        G[Gradio UI<br/>question or whole paper]
+        G[Chat UI<br/>question or whole paper]
         T[Telegram bot<br/><i>optional</i>]
     end
 
@@ -107,7 +107,7 @@ reports healthy, open **<http://localhost:7860>**.
 
 | Service | URL | Notes |
 |---|---|---|
-| **The app** (Gradio) | <http://localhost:7860> | ask a question, or upload a paper |
+| **The app** (Gradio) | <http://localhost:7860> | chat with your notes, or attach a paper |
 | API docs (Swagger) | <http://localhost:8000/docs> | every endpoint, try-it-out |
 | Health | <http://localhost:8000/health> | per-service status |
 | Airflow | <http://localhost:8080> | `admin` / `admin` |
@@ -281,8 +281,8 @@ exactly why an answer came out the way it did.
 
 ## Whole question papers
 
-Upload a past paper — a PDF, or a photo taken on your phone — and every question comes back
-answered from your notes, as a study sheet on screen and a PDF you can print.
+Attach a past paper to the composer — a PDF, or a photo taken on your phone — and every question is
+answered into the conversation, then offered as a PDF you can print.
 
 ```mermaid
 flowchart LR
