@@ -44,33 +44,48 @@ CSS = f"""
 :root {{
     --bg: #FAF9F5;
     --sidebar: #F0EEE6;
+    --card: #FFFFFF;
+    --bubble: #F0EEE6;
     --ink: #1F1E1D;
     --ink-2: #3D3A36;
-    --ink-3: #85817A;
+    --ink-3: #6B6760;  /* muted, but still 5:1 on the sidebar — small text has to pass */
     --line: #E3E0D8;
-    --bubble: #F0EEE6;
+    --hover: rgba(0, 0, 0, 0.05);
     --accent: #D97757;
     --ui: 'Inter', system-ui, -apple-system, sans-serif;
     --serif: 'Source Serif 4', Georgia, serif;
 }}
 
+/* Gradio puts `dark` on <body> when the OS asks for it. Flip every token
+   together — a half-flip is what left dark text sitting on a black panel. */
+body.dark {{
+    --bg: #262624;
+    --sidebar: #1F1E1D;
+    --card: #2E2D2A;
+    --bubble: #35342F;
+    --ink: #F5F4EF;
+    --ink-2: #DAD7D1;
+    --ink-3: #9A958D;
+    --line: #3B3936;
+    --hover: rgba(255, 255, 255, 0.07);
+}}
+
 .gradio-container, .gradio-container * {{ font-family: var(--ui); }}
-.gradio-container {{
+.gradio-container, body, body.dark {{
     max-width: 100% !important; padding: 0 !important;
     background: var(--bg) !important; color: var(--ink) !important;
 }}
 footer {{ display: none !important; }}
 
-/* Gradio paints itself dark when the OS asks; this design is one warm light look */
-.dark, .dark .block, .dark .form, .dark .gradio-container {{
-    background: var(--bg) !important; color: var(--ink) !important;
+/* Every Gradio surface takes its colour from the tokens above, in both modes */
+.block, .form, .wrap, .wrap-inner, .container,
+.dark .block, .dark .form, .dark .wrap, .dark .wrap-inner {{
+    background: transparent !important; color: var(--ink) !important;
 }}
-.dark input, .dark textarea, .dark select, .dark .wrap, .dark .wrap-inner {{
-    background: var(--bg) !important; color: var(--ink) !important;
+input, textarea, select, .dark input, .dark textarea, .dark select {{
+    background: var(--card) !important; color: var(--ink) !important;
 }}
-.dark label, .dark label span {{
-    color: var(--ink) !important; background: transparent !important;
-}}
+label, label span, .dark label, .dark label span {{ color: var(--ink-2) !important; }}
 
 /* ------------------------------------------------------------------ sidebar */
 #sidebar {{
@@ -99,7 +114,7 @@ footer {{ display: none !important; }}
     margin-bottom: 16px !important;
 }}
 #sidebar button.new-chat:hover {{
-    background: #fff !important; border-color: var(--ink-3) !important;
+    background: var(--card) !important; border-color: var(--ink-3) !important;
 }}
 
 .side-label {{
@@ -113,7 +128,7 @@ footer {{ display: none !important; }}
     padding: 7px 8px !important; border-radius: 8px !important;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }}
-#recents button:hover {{ background: rgba(0, 0, 0, 0.05) !important; }}
+#recents button:hover {{ background: var(--hover) !important; }}
 #recents .empty {{ font-size: 12.5px; color: var(--ink-3); padding: 4px 8px; line-height: 1.5; }}
 
 #sidebar label > span:first-child {{
@@ -135,8 +150,11 @@ footer {{ display: none !important; }}
 
 /* ------------------------------------------------------------------- thread */
 #main {{ padding: 0 !important; min-width: 0; background: var(--bg) !important; }}
+#thread, #thread .bubble-wrap, #thread .message-wrap {{
+    background: var(--bg) !important;
+}}
 #thread {{
-    border: none !important; background: transparent !important;
+    border: none !important;
     max-width: 760px; margin: 0 auto !important; padding: 26px 20px 0 !important;
 }}
 #thread .message-row {{ max-width: 100% !important; }}
@@ -157,7 +175,7 @@ footer {{ display: none !important; }}
     color: var(--ink) !important; margin: 18px 0 6px !important;
 }}
 #thread .bot img {{
-    border: 1px solid var(--line); border-radius: 10px; background: #fff;
+    border: 1px solid var(--line); border-radius: 10px; background: #FFFFFF;
     padding: 8px; max-width: 420px; margin: 10px 0 4px;
 }}
 #thread .bot em {{
@@ -192,7 +210,7 @@ footer {{ display: none !important; }}
     font-size: 15.5px !important; line-height: 1.5 !important;
     height: auto !important; min-height: 58px !important;
     padding: 16px 16px !important; color: var(--ink) !important;
-    background: #FFFFFF !important;
+    background: var(--card) !important;
     border: 1px solid var(--line) !important; border-radius: 16px !important;
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04) !important;
 }}
@@ -227,7 +245,7 @@ footer {{ display: none !important; }}
     font-size: 12.5px; color: var(--ink-2); background: var(--bg);
     border: 1px solid var(--line); border-radius: 999px; padding: 7px 13px; cursor: pointer;
 }}
-.chips button:hover {{ background: #fff; border-color: var(--ink-3); }}
+.chips button:hover {{ background: var(--card); border-color: var(--ink-3); }}
 
 /* Gradio's own chrome, toned to this palette */
 .progress-bar, .progress-level-inner {{ background: var(--accent) !important; }}
