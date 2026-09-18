@@ -15,7 +15,7 @@ from vtu_rag.ingestion.figures import FigureConfig, extract_figures
 from vtu_rag.ingestion.ocr import OcrConfig
 from vtu_rag.ingestion.parsers import parse_document
 from vtu_rag.ingestion.sources import DiscoveredNote, NoteSource
-from vtu_rag.models import Chunk, Figure, Module, Note, NoteStatus, Subject
+from vtu_rag.models import Chunk, Figure, Module, Note, NoteStatus, SourceType, Subject
 from vtu_rag.repositories import CatalogRepository, FigureRepository, NoteRepository
 from vtu_rag.services.cache import ResponseCache
 from vtu_rag.services.embeddings import EmbeddingError, EmbeddingProvider
@@ -47,13 +47,16 @@ class IngestOutcome:
 class SyncReport:
     outcomes: list[IngestOutcome] = field(default_factory=list)
     invalid_paths: list[str] = field(default_factory=list)
+    # Notes dropped because their file is no longer in the data folder
+    pruned: list[str] = field(default_factory=list)
 
     def count(self, status: IngestStatus) -> int:
         return sum(1 for o in self.outcomes if o.status == status)
 
     def summary(self) -> dict[str, int]:
         return {s.value: self.count(s) for s in IngestStatus} | {
-            "invalid_paths": len(self.invalid_paths)
+            "invalid_paths": len(self.invalid_paths),
+            "pruned": len(self.pruned),
         }
 
 
@@ -104,17 +107,38 @@ class IngestionService:
     def sync_in_progress(self) -> bool:
         return self._sync_lock.locked()
 
-    async def sync(self, source: NoteSource, force: bool = False) -> SyncReport:
+    async def sync(self, source: NoteSource, force: bool = False, prune: bool = True) -> SyncReport:
         async with self._sync_lock:
             catalog = load_catalog(self.data_dir)
             report = SyncReport()
+            seen: set[str] = set()
             async for discovered in source.discover():
+                seen.add(discovered.source_uri)
                 report.outcomes.append(await self.ingest(discovered, force=force, catalog=catalog))
             report.invalid_paths = list(getattr(source, "skipped", []))
-        if report.count(IngestStatus.INDEXED):
+            if prune:
+                report.pruned = await self._prune_missing(seen)
+        if report.count(IngestStatus.INDEXED) or report.pruned:
             await self._invalidate_cache()
         logger.info("Sync finished: %s", report.summary())
         return report
+
+    async def _prune_missing(self, seen: set[str]) -> list[str]:
+        """Drops notes whose file has been deleted, so answers never link a dead file."""
+        async with self.db.session() as session:
+            repo = NoteRepository(session)
+            stale = [
+                note
+                for note in await repo.list_notes(limit=10_000)
+                if note.source_type == SourceType.UPLOAD and note.source_uri not in seen
+            ]
+        removed = []
+        for note in stale:
+            if await self.delete_note(note.id):
+                removed.append(note.source_uri)
+        if removed:
+            logger.info("Pruned %d note(s) whose files are gone: %s", len(removed), removed)
+        return removed
 
     # ----------------------------------------------------------------- single
     async def ingest(

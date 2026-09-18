@@ -6,6 +6,9 @@ from vtu_rag.schemas.ask import Source
 from vtu_rag.services.search import SearchFilters, SearchHit
 
 _CITATION_RE = re.compile(r"\[(\d+(?:\s*,\s*\d+)*)\]")
+_SPACE_BEFORE_PUNCTUATION = re.compile(r"[ \t]+([.,;:!?])")
+_RUNS_OF_SPACES = re.compile(r"[ \t]{2,}")
+_TRAILING_SPACE = re.compile(r"[ \t]+$", re.MULTILINE)
 
 # Keep prompts inside small local models' context windows
 MAX_CONTEXT_WORDS = 3000
@@ -38,6 +41,20 @@ def cited_indices(answer: str) -> set[int]:
     for group in _CITATION_RE.findall(answer):
         found.update(int(n) for n in group.split(","))
     return found
+
+
+def strip_citation_markers(answer: str) -> str:
+    """Removes stray [1] / [2][3] markers from an answer.
+
+    Excerpts are numbered in the prompt, so small models sometimes cite them even
+    though the prompt forbids it. Sources are presented as links to the whole
+    note, which would leave those numbers pointing at nothing.
+    """
+    cleaned = _CITATION_RE.sub("", answer)
+    # "... memory [1]." leaves a space before the stop; "a [1] b" leaves two spaces
+    cleaned = _SPACE_BEFORE_PUNCTUATION.sub(r"\1", cleaned)
+    cleaned = _RUNS_OF_SPACES.sub(" ", cleaned)
+    return _TRAILING_SPACE.sub("", cleaned).strip()
 
 
 def mark_cited(answer: str, sources: list[Source]) -> list[Source]:

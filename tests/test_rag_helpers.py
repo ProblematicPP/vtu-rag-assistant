@@ -64,3 +64,18 @@ def test_cache_key_is_stable_and_sensitive():
     k2 = ResponseCache.make_key("ask", top_k=5, q="paging")
     k3 = ResponseCache.make_key("ask", q="paging", top_k=6)
     assert k1 == k2 != k3
+
+
+class TestStripCitationMarkers:
+    def test_markers_and_their_spacing_are_removed(self):
+        assert (
+            context.strip_citation_markers("Paging splits memory [1]. It avoids waste [2][3].")
+            == "Paging splits memory. It avoids waste."
+        )
+
+    def test_grouped_markers(self):
+        assert context.strip_citation_markers("Three states exist [1, 2].") == "Three states exist."
+
+    def test_plain_answers_are_untouched(self):
+        answer = "A semaphore is an integer variable.\n\n- wait()\n- signal()"
+        assert context.strip_citation_markers(answer) == answer

@@ -3,6 +3,7 @@
 import io
 import logging
 import re
+from collections import Counter
 from dataclasses import dataclass, field
 
 from pypdf import PdfReader
@@ -10,6 +11,15 @@ from pypdf import PdfReader
 from vtu_rag.ingestion.ocr import OcrConfig, OcrError, run_ocr
 
 logger = logging.getLogger(__name__)
+
+# Running headers/footers ("Karthikeyan S M, Asst. Professor, Dept. of CSE, SVIT")
+# repeat on nearly every page. Left in, they pollute chunk text and get mistaken
+# for section headings, so they are removed before chunking.
+REPEATED_LINE_MIN_PAGES = 4
+# Share of pages a line must appear on to count as a running header/footer. High
+# enough that repeated body phrases ("Advantages:") are not swept up with it.
+REPEATED_LINE_RATIO = 0.6
+REPEATED_LINE_MAX_WORDS = 12
 
 
 @dataclass
@@ -74,6 +84,50 @@ def _extract(data: bytes) -> ParsedDocument:
     return ParsedDocument(pages=pages)
 
 
+_PAGE_NOISE = re.compile(r"[\d\W_]+")
+
+
+def _line_key(line: str) -> str:
+    """Normalises a line so "Page 3 of 33" and "Page 7 of 33" look alike."""
+    return " ".join(_PAGE_NOISE.sub(" ", line).lower().split())
+
+
+def strip_repeated_lines(doc: ParsedDocument) -> ParsedDocument:
+    """Drops short lines that recur on most pages: running headers and footers.
+
+    Position is no guide here — pypdf returns text in content-stream order, so a
+    visual footer can land anywhere in a page's text. Frequency is the reliable
+    signal, kept safe by a high threshold (most pages) and a short-line rule, so
+    ordinary repeated phrases in the body survive.
+    """
+    pages = doc.pages
+    if len(pages) < REPEATED_LINE_MIN_PAGES:
+        return doc
+
+    page_lines = [page.text.splitlines() for page in pages]
+
+    counts: Counter[str] = Counter()
+    for lines in page_lines:
+        counts.update({key for line in lines if (key := _line_key(line))})
+
+    threshold = max(2, round(len(pages) * REPEATED_LINE_RATIO))
+    repeated = {
+        key
+        for key, count in counts.items()
+        if count >= threshold and len(key.split()) <= REPEATED_LINE_MAX_WORDS
+    }
+    if not repeated:
+        return doc
+
+    cleaned = []
+    for page, lines in zip(pages, page_lines, strict=True):
+        kept = [line for line in lines if not line.strip() or _line_key(line) not in repeated]
+        cleaned.append(ParsedPage(number=page.number, text=_clean("\n".join(kept))))
+
+    logger.info("Removed %d running header/footer line(s): %s", len(repeated), sorted(repeated)[:3])
+    return ParsedDocument(pages=cleaned, ocr_applied=doc.ocr_applied)
+
+
 def needs_ocr(doc: ParsedDocument, config: OcrConfig) -> bool:
     """True when enough pages carry too little text to be anything but images."""
     if not doc.pages:
@@ -87,7 +141,7 @@ def parse_pdf(data: bytes, ocr: OcrConfig | None = None) -> ParsedDocument:
     if ocr is None or not ocr.enabled or not needs_ocr(doc, ocr):
         if doc.is_empty:
             raise ParseError("PDF has no extractable text (a scanned PDF needs OCR)")
-        return doc
+        return strip_repeated_lines(doc)
 
     logger.info(
         "PDF looks scanned (%d words over %d pages); running OCR",
@@ -113,7 +167,7 @@ def parse_pdf(data: bytes, ocr: OcrConfig | None = None) -> ParsedDocument:
     if doc.is_empty:
         detail = f": {failure}" if failure else " (OCR produced no text)"
         raise ParseError(f"PDF has no extractable text{detail}")
-    return doc
+    return strip_repeated_lines(doc)
 
 
 def parse_text(data: bytes) -> ParsedDocument:

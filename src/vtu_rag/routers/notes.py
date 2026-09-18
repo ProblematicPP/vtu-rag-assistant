@@ -3,7 +3,8 @@ import re
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, File, Form, HTTPException, Query, Response, UploadFile, status
+from fastapi.responses import FileResponse
 from sqlalchemy import func, select
 
 from vtu_rag.dependencies import ContainerDep, SessionDep
@@ -16,6 +17,7 @@ from vtu_rag.ingestion.sources import DiscoveredNote, LocalFolderSource
 from vtu_rag.models import Chunk, NoteStatus, SourceType
 from vtu_rag.repositories import CatalogRepository, NoteRepository
 from vtu_rag.schemas.notes import IngestResult, NoteOut, SyncResponse, UploadResponse
+from vtu_rag.services.data_files import media_type_for, resolve_in_data_dir
 
 router = APIRouter(prefix="/api/v1/notes", tags=["notes"])
 
@@ -142,6 +144,31 @@ async def list_notes(
 ) -> list[NoteOut]:
     notes = await NoteRepository(session).list_notes(subject_code, note_status, limit, offset)
     return [NoteOut.from_note(n) for n in notes]
+
+
+@router.get(
+    "/{note_id}/file",
+    summary="Open the original note file (PDF/markdown)",
+    response_class=FileResponse,
+    responses={200: {"content": {"application/pdf": {}}}, 404: {"description": "Unknown note"}},
+)
+async def get_note_file(note_id: int, session: SessionDep, container: ContainerDep) -> Response:
+    note = await NoteRepository(session).get(note_id)
+    if note is None:
+        raise HTTPException(404, "Note not found")
+
+    path = resolve_in_data_dir(container.settings.data_dir, note.source_uri)
+    if path is None:
+        raise HTTPException(404, "The note file is no longer in the data folder")
+    # inline, so the browser opens the PDF (honouring #page=N) instead of downloading it
+    return FileResponse(
+        path,
+        media_type=media_type_for(path),
+        headers={
+            "Content-Disposition": f'inline; filename="{path.name}"',
+            "Cache-Control": "public, max-age=3600",
+        },
+    )
 
 
 @router.get("/{note_id}", response_model=NoteOut, summary="Get a note")

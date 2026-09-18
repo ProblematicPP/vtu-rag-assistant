@@ -5,19 +5,11 @@ import shutil
 from pathlib import Path
 
 from vtu_rag.ingestion.figures import ExtractedFigure
+from vtu_rag.services.data_files import MEDIA_TYPES, resolve_in_data_dir
 
 logger = logging.getLogger(__name__)
 
 FIGURES_DIRNAME = "derived/figures"
-
-MEDIA_TYPES = {
-    ".png": "image/png",
-    ".jpg": "image/jpeg",
-    ".gif": "image/gif",
-    ".bmp": "image/bmp",
-    ".webp": "image/webp",
-    ".tiff": "image/tiff",
-}
 
 
 class FigureStore:
@@ -41,12 +33,4 @@ class FigureStore:
         shutil.rmtree(self.note_dir(note_id), ignore_errors=True)
 
     def resolve(self, relative_path: str) -> Path | None:
-        """Maps a stored path back to a file, refusing anything outside the data folder."""
-        base = self.data_dir.resolve()
-        try:
-            candidate = (base / relative_path).resolve()
-            candidate.relative_to(base)
-        except (ValueError, OSError):
-            logger.warning("Refusing figure path outside the data folder: %s", relative_path)
-            return None
-        return candidate if candidate.is_file() else None
+        return resolve_in_data_dir(self.data_dir, relative_path)

@@ -6,7 +6,12 @@ from vtu_rag.schemas.ask import AskResponse, Source
 from vtu_rag.services.cache import ResponseCache
 from vtu_rag.services.llm import ChatMessage, LLMProvider
 from vtu_rag.services.rag import prompts
-from vtu_rag.services.rag.context import format_context, mark_cited, scope_description
+from vtu_rag.services.rag.context import (
+    format_context,
+    mark_cited,
+    scope_description,
+    strip_citation_markers,
+)
 from vtu_rag.services.search import SearchFilters, SearchHit, SearchService
 from vtu_rag.services.tracing import NOOP_TRACE, Trace, Tracer
 
@@ -35,7 +40,8 @@ class AnswerGenerator:
         response = await self.llm.generate(messages)
         trace.generation("generate-answer", response, input=[m.as_dict() for m in messages])
         answer = response.content.strip()
-        return answer, mark_cited(answer, sources)
+        # Keep the cited flags (they order the diagrams) but drop the markers
+        return strip_citation_markers(answer), mark_cited(answer, sources)
 
 
 class RAGService:

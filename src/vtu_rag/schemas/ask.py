@@ -106,10 +106,56 @@ class FigureOut(BaseModel):
         )
 
 
+class NoteRef(BaseModel):
+    """A source note, linked whole — students open the PDF at the page it used."""
+
+    note_id: int
+    title: str
+    subject_code: str
+    subject_name: str
+    module_number: int
+    module_title: str | None
+    source_uri: str
+    url: str
+    pages: list[int] = Field(default_factory=list)
+
+    @property
+    def first_page(self) -> int | None:
+        return self.pages[0] if self.pages else None
+
+
+def notes_from_sources(sources: list[Source], limit: int = 3) -> list[NoteRef]:
+    """One entry per note the answer drew on, with the pages it used."""
+    by_note: dict[int, NoteRef] = {}
+    for source in sources:
+        ref = by_note.get(source.note_id)
+        if ref is None:
+            if len(by_note) >= limit:
+                continue
+            ref = NoteRef(
+                note_id=source.note_id,
+                title=source.note_title,
+                subject_code=source.subject_code,
+                subject_name=source.subject_name,
+                module_number=source.module_number,
+                module_title=source.module_title,
+                source_uri=source.source_uri,
+                url=f"/api/v1/notes/{source.note_id}/file",
+            )
+            by_note[source.note_id] = ref
+        for page in filter(None, (source.page_start, source.page_end)):
+            if page not in ref.pages:
+                ref.pages.append(page)
+    for ref in by_note.values():
+        ref.pages.sort()
+    return list(by_note.values())
+
+
 class AskResponse(BaseModel):
     question: str
     answer: str
     sources: list[Source]
+    notes: list[NoteRef] = Field(default_factory=list)
     figures: list[FigureOut] = Field(default_factory=list)
     search_mode: SearchMode | None = None
     model: str | None = None

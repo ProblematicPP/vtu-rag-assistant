@@ -68,6 +68,7 @@ class SyncResponse(BaseModel):
     summary: dict[str, int]
     results: list[IngestResult]
     invalid_paths: list[str]
+    pruned: list[str] = []
 
     @classmethod
     def from_report(cls, report: SyncReport) -> "SyncResponse":
@@ -75,4 +76,5 @@ class SyncResponse(BaseModel):
             summary=report.summary(),
             results=[IngestResult.from_outcome(o) for o in report.outcomes],
             invalid_paths=report.invalid_paths,
+            pruned=report.pruned,
         )

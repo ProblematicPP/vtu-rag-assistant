@@ -61,27 +61,27 @@ def load_modules(subject_code: str) -> list[tuple[str, int]]:
 
 
 # ----------------------------------------------------------------- rendering
-def _pages(source: dict[str, Any]) -> str:
-    start, end = source.get("page_start"), source.get("page_end")
-    if not start:
+def format_notes(notes: list[dict[str, Any]]) -> str:
+    """Links the whole source note. PDF viewers honour #page=N, so it opens where it matters."""
+    if not notes:
         return ""
-    return f", p. {start}" if not end or end == start else f", pp. {start}–{end}"
-
-
-def format_sources(sources: list[dict[str, Any]]) -> str:
-    if not sources:
-        return ""
-    cited = [s for s in sources if s.get("cited")] or sources
-    lines = ["", "---", "**Sources**"]
-    for s in cited:
-        module = f"Module {s['module_number']}"
-        if s.get("module_title"):
-            module += f" ({s['module_title']})"
-        section = s.get("section_heading") or ""
-        section = f" › {section.split(' > ')[-1]}" if section else ""
+    lines = ["", "---", "**From your notes**"]
+    for note in notes:
+        module = f"Module {note['module_number']}"
+        if note.get("module_title"):
+            module += f" ({note['module_title']})"
+        pages = note.get("pages") or []
+        anchor = f"#page={pages[0]}" if pages else ""
+        where = ""
+        if pages:
+            where = (
+                f" — page {pages[0]}"
+                if len(pages) == 1
+                else f" — pages {', '.join(map(str, pages))}"
+            )
         lines.append(
-            f"- **[{s['index']}]** {s['subject_code']} {s['subject_name']} · {module}{section} "
-            f"— _{s['note_title']}{_pages(s)}_"
+            f"- [{note['subject_code']} {note['subject_name']} · {module} — {note['title']}]"
+            f"({PUBLIC_API}{note['url']}{anchor}){where}"
         )
     return "\n".join(lines)
 
@@ -156,7 +156,7 @@ async def respond(
     return (
         data["answer"]
         + format_figures(data.get("figures", []))
-        + format_sources(data.get("sources", []))
+        + format_notes(data.get("notes", []))
         + format_agent_trace(data)
     )
 
