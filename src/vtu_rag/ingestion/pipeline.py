@@ -11,6 +11,7 @@ from vtu_rag.config import Settings
 from vtu_rag.db import Database
 from vtu_rag.ingestion.catalog_loader import CatalogSubject, load_catalog
 from vtu_rag.ingestion.chunker import SectionChunker, TextChunk
+from vtu_rag.ingestion.ocr import OcrConfig
 from vtu_rag.ingestion.parsers import parse_document
 from vtu_rag.ingestion.sources import DiscoveredNote, NoteSource
 from vtu_rag.models import Chunk, Module, Note, NoteStatus, Subject
@@ -35,6 +36,7 @@ class IngestOutcome:
     note_id: int | None = None
     chunks: int = 0
     embedded: bool = False
+    ocr: bool = False
     error: str | None = None
 
 
@@ -205,8 +207,13 @@ class IngestionService:
         module: Module,
         old_doc_ids: list[str],
     ) -> IngestOutcome:
-        # pypdf is CPU-bound; keep the event loop free
-        parsed = await asyncio.to_thread(parse_document, discovered.content, discovered.extension)
+        # Parsing (and OCR especially) is CPU-bound; keep the event loop free
+        parsed = await asyncio.to_thread(
+            parse_document,
+            discovered.content,
+            discovered.extension,
+            OcrConfig.from_settings(self.settings),
+        )
         text_chunks = self.chunker.chunk(parsed)
         if not text_chunks:
             raise ValueError("No text chunks produced from note")
@@ -265,10 +272,11 @@ class IngestionService:
             await repo.mark_indexed(note, parsed.page_count, embedding_model)
 
         logger.info(
-            "Indexed %s: %d chunks (%s)",
+            "Indexed %s: %d chunks (%s%s)",
             discovered.source_uri,
             len(docs),
             "hybrid" if vectors else "bm25-only",
+            ", ocr" if parsed.ocr_applied else "",
         )
         return IngestOutcome(
             discovered.source_uri,
@@ -276,6 +284,7 @@ class IngestionService:
             note_id=note_id,
             chunks=len(docs),
             embedded=bool(vectors),
+            ocr=parsed.ocr_applied,
         )
 
     async def _embed(

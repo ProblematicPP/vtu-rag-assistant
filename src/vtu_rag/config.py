@@ -82,6 +82,21 @@ class ChunkSettings(BaseSettings):
     min_words: int = 80
 
 
+class OcrSettings(BaseSettings):
+    """OCR for scanned PDFs (ocrmypdf + Tesseract, both installed in the image)."""
+
+    model_config = _group("OCR_")
+
+    enabled: bool = True
+    # Tesseract language packs, e.g. "eng" or "eng+kan" (install the pack in the image first)
+    language: str = "eng"
+    min_words_per_page: int = 20
+    min_low_text_ratio: float = 0.3
+    timeout_seconds: float = 1800.0
+    force_retry: bool = True
+    deskew: bool = False
+
+
 class LLMSettings(BaseSettings):
     model_config = _group("LLM_")
 
@@ -141,6 +156,7 @@ class Settings(BaseSettings):
     cache: CacheSettings = Field(default_factory=CacheSettings)
     jina: JinaSettings = Field(default_factory=JinaSettings)
     chunking: ChunkSettings = Field(default_factory=ChunkSettings)
+    ocr: OcrSettings = Field(default_factory=OcrSettings)
     llm: LLMSettings = Field(default_factory=LLMSettings)
     ollama: OllamaSettings = Field(default_factory=OllamaSettings)
     agent: AgentSettings = Field(default_factory=AgentSettings)

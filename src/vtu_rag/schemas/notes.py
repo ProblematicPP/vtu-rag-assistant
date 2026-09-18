@@ -51,6 +51,7 @@ class IngestResult(BaseModel):
     note_id: int | None
     chunks: int
     embedded: bool
+    ocr: bool
     error: str | None
 
     @classmethod

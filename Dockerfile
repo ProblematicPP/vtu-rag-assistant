@@ -9,8 +9,16 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     UV_PROJECT_ENVIRONMENT=/opt/venv \
     PATH="/opt/venv/bin:$PATH"
 
+# ocrmypdf + tesseract add a text layer to scanned notes so they can be indexed;
+# ghostscript is ocrmypdf's PDF engine and osd holds the page-orientation model.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl \
+    && apt-get install -y --no-install-recommends \
+        curl \
+        ocrmypdf \
+        ghostscript \
+        tesseract-ocr \
+        tesseract-ocr-eng \
+        tesseract-ocr-osd \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
