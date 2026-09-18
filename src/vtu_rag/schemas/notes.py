@@ -52,6 +52,7 @@ class IngestResult(BaseModel):
     chunks: int
     embedded: bool
     ocr: bool
+    figures: int
     error: str | None
 
     @classmethod

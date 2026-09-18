@@ -42,6 +42,10 @@ class NoteSource(ABC):
     def discover(self) -> AsyncIterator[DiscoveredNote]: ...
 
 
+# Folders the pipeline writes into; never scanned for notes
+DERIVED_DIRS = frozenset({"derived"})
+
+
 class LocalFolderSource(NoteSource):
     """Yields every supported file under `data_dir` that matches the folder convention."""
 
@@ -54,6 +58,10 @@ class LocalFolderSource(NoteSource):
             if not path.is_file() or path.suffix.lower() not in SUPPORTED_EXTENSIONS:
                 continue
             if path.name.lower() == "readme.md":
+                continue
+            # Skip what the pipeline itself writes: OCR cache, extracted figures
+            relative = path.relative_to(self.data_dir)
+            if relative.parts[0] in DERIVED_DIRS or any(p.startswith(".") for p in relative.parts):
                 continue
             try:
                 location = parse_note_path(path, self.data_dir)

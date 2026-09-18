@@ -13,6 +13,8 @@ logger = logging.getLogger(__name__)
 
 settings = get_settings()
 API = settings.api_base_url.rstrip("/")
+# Images are fetched by the browser, not by this process
+PUBLIC_API = settings.public_api_base_url.rstrip("/")
 ALL = "All"
 MODES = {"Agentic (guardrails + self-correction)": "agentic-ask", "Quick answer": "ask"}
 
@@ -101,6 +103,22 @@ def format_agent_trace(data: dict[str, Any]) -> str:
 
 
 # ------------------------------------------------------------------ chat fn
+def format_figures(figures: list[dict[str, Any]]) -> str:
+    """Diagrams are the part students copy into the answer sheet, so show them inline."""
+    if not figures:
+        return ""
+    blocks = ["\n\n---\n\n**Diagrams from these notes**\n"]
+    for figure in figures:
+        caption = figure.get("caption") or (
+            f"Scanned page {figure['page']}"
+            if figure.get("kind") == "page"
+            else f"Diagram on page {figure['page']}"
+        )
+        where = f"{figure['subject_code']} · Module {figure['module_number']} · p. {figure['page']}"
+        blocks.append(f"![{caption}]({PUBLIC_API}{figure['url']})\n\n*{caption} — {where}*\n")
+    return "\n".join(blocks)
+
+
 async def respond(
     message: str,
     history: list[dict[str, Any]],
@@ -135,7 +153,12 @@ async def respond(
         return f"⚠️ The assistant is unavailable right now ({response.status_code}): {detail}"
 
     data = response.json()
-    return data["answer"] + format_sources(data.get("sources", [])) + format_agent_trace(data)
+    return (
+        data["answer"]
+        + format_figures(data.get("figures", []))
+        + format_sources(data.get("sources", []))
+        + format_agent_trace(data)
+    )
 
 
 # ---------------------------------------------------------------------- app

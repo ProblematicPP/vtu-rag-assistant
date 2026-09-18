@@ -97,6 +97,23 @@ class OcrSettings(BaseSettings):
     deskew: bool = False
 
 
+class FigureSettings(BaseSettings):
+    """Diagram extraction from note PDFs."""
+
+    model_config = _group("FIGURES_")
+
+    enabled: bool = True
+    min_width: int = 150
+    min_height: int = 90
+    min_bytes: int = 3000
+    max_aspect_ratio: float = 20.0
+    max_per_page: int = 6
+    repeat_ratio: float = 0.25
+    include_page_scans: bool = True
+    # Most diagrams to attach to one answer
+    max_per_answer: int = 4
+
+
 class LLMSettings(BaseSettings):
     model_config = _group("LLM_")
 
@@ -146,6 +163,8 @@ class Settings(BaseSettings):
     default_branch: str = "cse"
     default_scheme: str = "2022"
     api_base_url: str = "http://localhost:8000"
+    # Where a browser can reach the API (figure images are loaded from here)
+    public_api_base_url: str = "http://localhost:8000"
     # Index new/changed notes in the background when the API starts
     sync_on_startup: bool = True
     telegram_bot_token: str = ""
@@ -157,6 +176,7 @@ class Settings(BaseSettings):
     jina: JinaSettings = Field(default_factory=JinaSettings)
     chunking: ChunkSettings = Field(default_factory=ChunkSettings)
     ocr: OcrSettings = Field(default_factory=OcrSettings)
+    figures: FigureSettings = Field(default_factory=FigureSettings)
     llm: LLMSettings = Field(default_factory=LLMSettings)
     ollama: OllamaSettings = Field(default_factory=OllamaSettings)
     agent: AgentSettings = Field(default_factory=AgentSettings)

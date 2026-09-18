@@ -11,6 +11,7 @@ from vtu_rag.db.base import Base, TimestampMixin
 
 if TYPE_CHECKING:
     from vtu_rag.models.catalog import Module
+    from vtu_rag.models.figure import Figure
 
 
 class SourceType(enum.StrEnum):
@@ -49,6 +50,9 @@ class Note(TimestampMixin, Base):
     module: Mapped["Module"] = relationship(back_populates="notes")
     chunks: Mapped[list["Chunk"]] = relationship(
         back_populates="note", cascade="all, delete-orphan", order_by="Chunk.chunk_index"
+    )
+    figures: Mapped[list["Figure"]] = relationship(
+        back_populates="note", cascade="all, delete-orphan", order_by="Figure.page"
     )
 
 

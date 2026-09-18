@@ -75,10 +75,42 @@ class Source(BaseModel):
         return " — ".join(parts)
 
 
+class FigureOut(BaseModel):
+    """A diagram from the notes, served by the API so a student can redraw it."""
+
+    id: int
+    url: str
+    note_id: int
+    subject_code: str
+    module_number: int
+    page: int
+    kind: str
+    caption: str | None
+    width: int
+    height: int
+
+    @classmethod
+    def from_figure(cls, figure) -> "FigureOut":  # noqa: ANN001 - ORM model
+        subject = figure.note.module.subject
+        return cls(
+            id=figure.id,
+            url=f"/api/v1/figures/{figure.id}",
+            note_id=figure.note_id,
+            subject_code=subject.code,
+            module_number=figure.note.module.number,
+            page=figure.page,
+            kind=figure.kind,
+            caption=figure.caption,
+            width=figure.width,
+            height=figure.height,
+        )
+
+
 class AskResponse(BaseModel):
     question: str
     answer: str
     sources: list[Source]
+    figures: list[FigureOut] = Field(default_factory=list)
     search_mode: SearchMode | None = None
     model: str | None = None
     cached: bool = False

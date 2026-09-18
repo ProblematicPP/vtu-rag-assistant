@@ -11,13 +11,15 @@ from vtu_rag.config import Settings
 from vtu_rag.db import Database
 from vtu_rag.ingestion.catalog_loader import CatalogSubject, load_catalog
 from vtu_rag.ingestion.chunker import SectionChunker, TextChunk
+from vtu_rag.ingestion.figures import FigureConfig, extract_figures
 from vtu_rag.ingestion.ocr import OcrConfig
 from vtu_rag.ingestion.parsers import parse_document
 from vtu_rag.ingestion.sources import DiscoveredNote, NoteSource
-from vtu_rag.models import Chunk, Module, Note, NoteStatus, Subject
-from vtu_rag.repositories import CatalogRepository, NoteRepository
+from vtu_rag.models import Chunk, Figure, Module, Note, NoteStatus, Subject
+from vtu_rag.repositories import CatalogRepository, FigureRepository, NoteRepository
 from vtu_rag.services.cache import ResponseCache
 from vtu_rag.services.embeddings import EmbeddingError, EmbeddingProvider
+from vtu_rag.services.figure_store import FigureStore
 from vtu_rag.services.search import SearchService
 
 logger = logging.getLogger(__name__)
@@ -37,6 +39,7 @@ class IngestOutcome:
     chunks: int = 0
     embedded: bool = False
     ocr: bool = False
+    figures: int = 0
     error: str | None = None
 
 
@@ -81,6 +84,7 @@ class IngestionService:
         self.db = db
         self.search = search
         self.embeddings = embeddings
+        self.figure_store = FigureStore(settings.data_dir)
         self.chunker = SectionChunker(
             target_words=settings.chunking.target_words,
             overlap_words=settings.chunking.overlap_words,
@@ -163,6 +167,7 @@ class IngestionService:
                 return False
             await self.search.delete_documents(await repo.chunk_doc_ids(note_id))
             await repo.delete(note)
+        self.figure_store.clear(note_id)
         await self._invalidate_cache()
         return True
 
@@ -218,6 +223,17 @@ class IngestionService:
         if not text_chunks:
             raise ValueError("No text chunks produced from note")
 
+        figures = (
+            await asyncio.to_thread(
+                extract_figures,
+                discovered.content,
+                parsed,
+                FigureConfig.from_settings(self.settings),
+            )
+            if discovered.extension.lower() == ".pdf"
+            else []
+        )
+
         vectors = await self._embed(subject, module, text_chunks, discovered.source_uri)
         embedding_model = self.embedding_model if vectors else None
 
@@ -266,15 +282,18 @@ class IngestionService:
                     body["embedding"] = vector
                 docs.append((row.opensearch_doc_id, body))
 
+            await self._store_figures(session, note_id, figures)
+
             await self.search.index_documents(docs)
             new_ids = {doc_id for doc_id, _ in docs}
             await self.search.delete_documents([i for i in old_doc_ids if i not in new_ids])
             await repo.mark_indexed(note, parsed.page_count, embedding_model)
 
         logger.info(
-            "Indexed %s: %d chunks (%s%s)",
+            "Indexed %s: %d chunks, %d figures (%s%s)",
             discovered.source_uri,
             len(docs),
+            len(figures),
             "hybrid" if vectors else "bm25-only",
             ", ocr" if parsed.ocr_applied else "",
         )
@@ -285,7 +304,35 @@ class IngestionService:
             chunks=len(docs),
             embedded=bool(vectors),
             ocr=parsed.ocr_applied,
+            figures=len(figures),
         )
+
+    async def _store_figures(self, session, note_id: int, figures: list) -> None:
+        """Writes images to disk and replaces the note's figure rows."""
+        repo = FigureRepository(session)
+        await repo.replace_for_note(note_id, [])
+        self.figure_store.clear(note_id)
+        if not figures:
+            return
+
+        rows = []
+        for figure in figures:
+            path, media_type = await asyncio.to_thread(self.figure_store.save, note_id, figure)
+            rows.append(
+                Figure(
+                    page=figure.page,
+                    index=figure.index,
+                    kind=figure.kind.value,
+                    path=path,
+                    media_type=media_type,
+                    width=figure.width,
+                    height=figure.height,
+                    size_bytes=figure.size_bytes,
+                    sha256=figure.sha256,
+                    caption=figure.caption[:256] if figure.caption else None,
+                )
+            )
+        await repo.replace_for_note(note_id, rows)
 
     async def _embed(
         self, subject: Subject, module: Module, chunks: list[TextChunk], uri: str

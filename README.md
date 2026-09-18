@@ -93,6 +93,18 @@ instead. A junk text layer triggers a second pass with `--force-ocr`.
 - Tune with the `OCR_*` settings in `.env`; other languages need the matching Tesseract pack added to
   the Dockerfile (e.g. `tesseract-ocr-kan` for Kannada, then `OCR_LANGUAGE=eng+kan`).
 
+### Diagrams
+
+VTU answers usually want a diagram, so the figures in a note are extracted alongside its text:
+every embedded image is pulled out at ingest, logos/rules/watermarks are filtered away, captions
+like "Fig. 1.2 Layered operating system" are picked up from the page, and the images are stored
+under `data/derived/figures`.
+
+An answer carries the diagrams that sit on the pages it drew from (`figures` in the response,
+rendered inline in the chat UI). `GET /api/v1/notes/{id}/figures` lists a note's diagrams and
+`GET /api/v1/figures/{id}` serves one. For scanned notes the page image itself is kept, since
+that is where the diagram is. Tune with the `FIGURES_*` settings.
+
 Subject names and module titles come from [data/catalog.yaml](data/catalog.yaml), which is seeded for the
 **CSE 2022 scheme**. Check it against the official VTU syllabus and extend it for your branch.
 
