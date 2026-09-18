@@ -62,9 +62,15 @@ async def _solve(
     filters = request.to_filters()
     settings = container.settings.figures
 
+    marks_by_text = {q.text: q.marks for q in request.questions}
+
     async def answer(question: str, search_filters):  # noqa: ANN001,ANN202 - local closure
         response = await container.rag.ask(
-            question, search_filters, top_k=request.top_k, use_cache=request.use_cache
+            question,
+            search_filters,
+            top_k=request.top_k,
+            use_cache=request.use_cache,
+            marks=marks_by_text.get(question),
         )
         response.notes = notes_from_sources(response.sources)
         spans = page_spans(response.sources) if settings.enabled else []

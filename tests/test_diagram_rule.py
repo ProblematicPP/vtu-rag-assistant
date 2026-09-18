@@ -63,3 +63,24 @@ def test_probe_ignores_diagrams_about_something_else():
 
 def test_probe_with_no_figures():
     assert any_figure_matches([], "Explain paging", [FakeHit()]) is False
+
+
+class TestDiagramNarration:
+    """Small models narrate the figure even when told not to; the student sees it anyway."""
+
+    def test_a_trailing_diagram_line_is_removed(self):
+        from vtu_rag.services.rag.context import drop_diagram_narration
+
+        answer = "Paging splits memory.\n\n**Diagram:** The diagram shown illustrates paging."
+        assert drop_diagram_narration(answer) == "Paging splits memory."
+
+    def test_a_bracketed_aside_is_removed(self):
+        from vtu_rag.services.rag.context import drop_diagram_narration
+
+        assert "diagram shown" not in drop_diagram_narration("Types [the diagram shown] follow.")
+
+    def test_real_prose_about_a_diagram_survives(self):
+        from vtu_rag.services.rag.context import drop_diagram_narration
+
+        answer = "The transition diagram of a process has five states."
+        assert drop_diagram_narration(answer) == answer

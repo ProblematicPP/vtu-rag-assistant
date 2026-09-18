@@ -31,7 +31,7 @@ TELEGRAM_LIMIT = 4000  # Telegram caps messages at 4096 chars
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
-        "Hi! I'm VTU Exam Buddy. Ask me anything from your "
+        "Hi! I'm ChatVTU. Ask me anything from your "
         f"{settings.default_branch.upper()} {settings.default_scheme}-scheme notes.\n\n"
         "Use /subject BCS303 to focus on one subject, /subjects to list them."
     )

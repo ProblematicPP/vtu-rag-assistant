@@ -19,7 +19,7 @@ class ExtractedPaper(BaseModel):
 class PaperAnswerRequest(SearchFilterParams):
     questions: list[QuestionOut]
     title: str = "Question paper"
-    top_k: int = Field(5, ge=1, le=15)
+    top_k: int = Field(8, ge=1, le=15)
     use_cache: bool = True
     include_figures: bool = True
 

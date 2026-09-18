@@ -121,15 +121,18 @@ label, label span, .dark label, .dark label span {{ color: var(--ink-2) !importa
     font-size: 11.5px; font-weight: 600; color: var(--ink-3);
     padding: 0 8px; margin: 14px 0 6px; letter-spacing: 0.01em;
 }}
-#recents {{ display: flex; flex-direction: column; gap: 1px; }}
-#recents button {{
-    background: transparent !important; border: none !important; box-shadow: none !important;
-    text-align: left !important; font-size: 13px !important; color: var(--ink-2) !important;
-    padding: 7px 8px !important; border-radius: 8px !important;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+#chats .block, #chats .container {{ border: none !important; background: transparent !important; }}
+#chats .table-wrap, #chats table {{ border: none !important; background: transparent !important; }}
+#chats td, #chats .gallery-item {{
+    border: none !important; background: transparent !important;
+    font-size: 13px !important; color: var(--ink-2) !important;
+    padding: 7px 8px !important; border-radius: 8px !important; cursor: pointer;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px;
 }}
-#recents button:hover {{ background: var(--hover) !important; }}
-#recents .empty {{ font-size: 12.5px; color: var(--ink-3); padding: 4px 8px; line-height: 1.5; }}
+#chats td:hover, #chats .gallery-item:hover {{ background: var(--hover) !important; }}
+#chats .empty-chats {{
+    font-size: 12.5px; color: var(--ink-3); padding: 4px 8px; line-height: 1.5;
+}}
 
 #sidebar label > span:first-child {{
     font-size: 12px !important; font-weight: 500 !important; color: var(--ink-3) !important;
@@ -142,9 +145,25 @@ label, label span, .dark label, .dark label span {{ color: var(--ink-2) !importa
 #sidebar .wrap {{ border: 1px solid var(--line) !important; }}
 #sidebar .wrap-inner, #sidebar input {{ border: none !important; }}
 #sidebar .block:not(:last-child) {{ margin-bottom: 12px !important; }}
-#sidebar [data-testid='checkbox-group'] label, #sidebar .gr-check-radio label {{
-    font-size: 12.5px !important;
+/* Gradio's radio group leaves its wrapper wider than the pills inside it,
+   which showed as an empty box beside the choices. Let the pills fill it. */
+#sidebar fieldset .wrap {{
+    display: flex !important; gap: 6px !important;
+    background: transparent !important; border: none !important; padding: 0 !important;
 }}
+#sidebar fieldset label {{
+    flex: 1 1 0 !important; justify-content: center !important;
+    background: var(--card) !important; color: var(--ink-2) !important;
+    border: 1px solid var(--line) !important; border-radius: 8px !important;
+    padding: 7px 8px !important; font-size: 12.5px !important; font-weight: 500 !important;
+    margin: 0 !important; cursor: pointer;
+}}
+#sidebar fieldset label.selected {{
+    background: var(--accent) !important; border-color: var(--accent) !important;
+    color: #FFFFFF !important;
+}}
+#sidebar fieldset input[type='radio'] {{ display: none !important; }}
+#sidebar [data-testid='checkbox-group'] label {{ font-size: 12.5px !important; }}
 #index-note {{ font-size: 11.5px; color: var(--ink-3); line-height: 1.55; padding: 10px 8px 0; }}
 #index-note b {{ color: var(--ink-2); font-weight: 600; }}
 
@@ -360,14 +379,23 @@ def answer_markdown(data: dict[str, Any]) -> str:
     return "".join(parts)
 
 
-def recents_html(questions: list[str]) -> str:
-    if not questions:
-        return "<div id='recents'><p class='empty'>Questions you ask will be listed here.</p></div>"
-    items = "".join(
-        f"<button type='button' title='{html.escape(q)}'>{html.escape(q[:46])}</button>"
-        for q in reversed(questions[-12:])
-    )
-    return f"<div id='recents'>{items}</div>"
+def chat_samples(chats: list[dict[str, Any]]) -> list[list[str]]:
+    """One row per conversation, newest last — the way Claude lists chats."""
+    return [[chat["title"] or "New chat"] for chat in chats]
+
+
+def remember(
+    chats: list[dict[str, Any]], index: int, history: list[dict[str, Any]], title: str
+) -> tuple[list[dict[str, Any]], int]:
+    """Keeps the conversation under its own entry, starting one if this is the first turn."""
+    chats = [dict(chat) for chat in chats or []]
+    if index is None or index >= len(chats):
+        chats.append({"title": title[:42], "history": history})
+        return chats, len(chats) - 1
+    chats[index]["history"] = history
+    if not chats[index]["title"]:
+        chats[index]["title"] = title[:42]
+    return chats, index
 
 
 GREETING = (
@@ -395,7 +423,8 @@ def _filters(semester: str, subject_code: str | None, modules: list[int]) -> dic
 async def ask(
     question: str,
     history: list[dict[str, Any]],
-    recents: list[str],
+    chats: list[dict[str, Any]],
+    index: int,
     semester: str,
     subject_code: str | None,
     modules: list[int],
@@ -404,13 +433,20 @@ async def ask(
     asked = (question or "").strip()
     history = list(history or [])
     if len(asked) < 3:
-        yield gr.skip(), gr.skip(), gr.skip(), gr.skip(), gr.skip()
+        yield (gr.skip(),) * 6
         return
 
-    recents = [*(recents or []), asked]
     history.append({"role": "user", "content": asked})
     history.append({"role": "assistant", "content": "_Reading your notes…_"})
-    yield history, recents, recents_html(recents), "", gr.update(visible=False)
+    chats, index = remember(chats, index, history, asked)
+    yield (
+        history,
+        chats,
+        index,
+        gr.update(samples=chat_samples(chats)),
+        "",
+        gr.update(visible=False),
+    )
 
     endpoint = MODES.get(mode_label, "agentic-ask")
     payload = {"question": asked, **_filters(semester, subject_code, modules)}
@@ -425,12 +461,22 @@ async def ask(
         data = {"answer": f"I can't reach the API at {API}. Is the stack running?"}
 
     history[-1] = {"role": "assistant", "content": answer_markdown(data)}
-    yield history, recents, recents_html(recents), "", gr.update(visible=False)
+    chats, index = remember(chats, index, history, asked)
+    yield (
+        history,
+        chats,
+        index,
+        gr.update(samples=chat_samples(chats)),
+        "",
+        gr.update(visible=False),
+    )
 
 
 async def solve_paper(
     file_path: str | None,
     history: list[dict[str, Any]],
+    chats: list[dict[str, Any]],
+    index: int,
     semester: str,
     subject_code: str | None,
     modules: list[int],
@@ -438,13 +484,28 @@ async def solve_paper(
     """Attaching a question paper answers every question into the thread."""
     history = list(history or [])
     if not file_path:
-        yield gr.skip(), gr.skip(), gr.skip()
+        yield (gr.skip(),) * 6
         return
 
     name = Path(file_path).name
+    title = Path(file_path).stem
+
+    def frame(download: Any = None) -> tuple:
+        """The same updates at every step; the download button stays hidden until the end."""
+        nonlocal chats, index
+        chats, index = remember(chats, index, history, title)
+        return (
+            history,
+            chats,
+            index,
+            gr.update(samples=chat_samples(chats)),
+            download if download is not None else gr.update(visible=False),
+            gr.skip(),
+        )
+
     history.append({"role": "user", "content": f"📄 **{name}** — answer every question"})
     history.append({"role": "assistant", "content": "_Reading the question paper…_"})
-    yield history, gr.update(visible=False), gr.skip()
+    yield frame()
 
     try:
         with open(file_path, "rb") as handle:
@@ -456,7 +517,7 @@ async def solve_paper(
         payload = extract.json()
     except httpx.HTTPError as exc:
         history[-1] = {"role": "assistant", "content": f"I couldn't read that file: {exc}"}
-        yield history, gr.update(visible=False), gr.skip()
+        yield frame()
         return
 
     if extract.status_code >= 400:
@@ -464,7 +525,7 @@ async def solve_paper(
             "role": "assistant",
             "content": f"I couldn't read that paper. {payload.get('detail', '')}",
         }
-        yield history, gr.update(visible=False), gr.skip()
+        yield frame()
         return
 
     questions = payload.get("questions") or []
@@ -474,7 +535,7 @@ async def solve_paper(
             "content": "I couldn't find any questions in that file. VTU papers number their "
             "parts like “Q.1 a.” — a straighter, sharper scan usually fixes it.",
         }
-        yield history, gr.update(visible=False), gr.skip()
+        yield frame()
         return
 
     marks = sum(q.get("marks") or 0 for q in questions)
@@ -482,24 +543,29 @@ async def solve_paper(
         f"**Q{q['number']}** {q['text']}" + (f"  ·  {q['marks']} marks" if q.get("marks") else "")
         for q in questions
     )
-    history[-1] = {
-        "role": "assistant",
-        "content": f"Found **{len(questions)} questions**"
+    found = (
+        f"Found **{len(questions)} questions**"
         + (f" worth {marks} marks" if marks else "")
-        + f" in {name}. Answering them now.\n\n{listing}",
-    }
-    yield history, gr.update(visible=False), gr.skip()
+        + f" in {name}. Answering them now."
+    )
+    history[-1] = {"role": "assistant", "content": f"{found}\n\n{listing}"}
+    yield frame()
 
     filters = _filters(semester, subject_code, modules)
     async with httpx.AsyncClient(timeout=900) as client:
-        for index, question in enumerate(questions, start=1):
+        for number, question in enumerate(questions, start=1):
             heading = f"**Q{question['number']}** · {question['text']}"
             history.append({"role": "assistant", "content": f"{heading}\n\n_Answering…_"})
-            yield history, gr.update(visible=False), gr.skip()
+            yield frame()
 
             try:
                 response = await client.post(
-                    f"{API}/api/v1/ask", json={"question": question["text"], **filters}
+                    f"{API}/api/v1/ask",
+                    json={
+                        "question": question["text"],
+                        "marks": question.get("marks"),
+                        **filters,
+                    },
                 )
                 data = response.json() if response.status_code < 400 else {}
             except httpx.HTTPError as exc:
@@ -512,18 +578,18 @@ async def solve_paper(
                 "role": "assistant",
                 "content": f"{heading}\n\n{answer_markdown(data)}",
             }
-            logger.info("Answered %d of %d", index, len(questions))
-            yield history, gr.update(visible=False), gr.skip()
+            logger.info("Answered %d of %d", number, len(questions))
+            yield frame()
 
-    pdf_path = await build_paper_pdf(questions, Path(name).stem, filters)
+    pdf_path = await build_paper_pdf(questions, title, filters)
     history.append(
         {
             "role": "assistant",
-            "content": "All questions answered. **Download as PDF** below the composer gives you "
-            "the whole set to print, diagrams included.",
+            "content": "All questions answered. **Download answers as PDF** below the composer "
+            "gives you the whole set to print, diagrams included.",
         }
     )
-    yield history, gr.update(value=pdf_path, visible=bool(pdf_path)), gr.skip()
+    yield frame(gr.update(value=pdf_path, visible=bool(pdf_path)))
 
 
 async def build_paper_pdf(
@@ -571,13 +637,14 @@ FILL_JS = """() => {
 
 
 def build_app() -> gr.Blocks:
-    with gr.Blocks(title="VTU Exam Buddy", fill_width=True) as demo:
-        recents_state = gr.State([])
+    with gr.Blocks(title="ChatVTU", fill_width=True) as demo:
+        chats_state = gr.State([])  # one entry per conversation, like Claude's Recents
+        chat_index = gr.State(0)
 
         with gr.Row(equal_height=False):
             # ---------------------------------------------------------- sidebar
             with gr.Column(scale=2, min_width=235, elem_id="sidebar"):
-                gr.HTML("<div id='brand'><span class='star'>✳</span> VTU Exam Buddy</div>")
+                gr.HTML("<div id='brand'><span class='star'>✳</span> ChatVTU</div>")
                 new_chat = gr.Button("＋  New question", elem_classes="new-chat")
 
                 gr.HTML("<p class='side-label'>What to search</p>")
@@ -588,8 +655,15 @@ def build_app() -> gr.Blocks:
                 modules = gr.CheckboxGroup([], label="Modules")
                 mode = gr.Radio(list(MODES), value="Careful", label="Answering")
 
-                gr.HTML("<p class='side-label'>This session</p>")
-                recents = gr.HTML(recents_html([]))
+                gr.HTML("<p class='side-label'>Chats</p>")
+                chats_list = gr.Dataset(
+                    components=[gr.Textbox(visible=False)],
+                    samples=[],
+                    type="index",
+                    show_label=False,
+                    elem_id="chats",
+                    samples_per_page=20,
+                )
                 # Read at page load, not at startup: the API may still be booting
                 index_note = gr.HTML("<p id='index-note'>Checking what's indexed…</p>")
 
@@ -633,26 +707,50 @@ def build_app() -> gr.Blocks:
 
         question.submit(
             ask,
-            [question, thread, recents_state, semester, subject, modules, mode],
-            [thread, recents_state, recents, question, download],
+            [question, thread, chats_state, chat_index, semester, subject, modules, mode],
+            [thread, chats_state, chat_index, chats_list, question, download],
         ).then(open_thread, None, [greeting, starters, thread])
 
         paper.upload(
             solve_paper,
-            [paper, thread, semester, subject, modules],
-            [thread, download, question],
+            [paper, thread, chats_state, chat_index, semester, subject, modules],
+            [thread, chats_state, chat_index, chats_list, download, question],
         ).then(open_thread, None, [greeting, starters, thread])
 
-        def start_over():
+        def start_over(chats: list) -> tuple:
+            """A new chat isn't listed until it has a question in it."""
             return (
-                [],
+                gr.update(value=[], visible=False),
+                len(chats or []),
                 "",
                 gr.update(visible=True),
                 gr.update(visible=True),
                 gr.update(visible=False),
             )
 
-        new_chat.click(start_over, None, [thread, question, greeting, starters, download])
+        new_chat.click(
+            start_over,
+            chats_state,
+            [thread, chat_index, question, greeting, starters, download],
+        )
+
+        def open_chat(index: int, chats: list) -> tuple:
+            """Reopen an earlier conversation from the sidebar."""
+            if not chats or index is None or index >= len(chats):
+                return (gr.skip(),) * 5
+            return (
+                gr.update(value=chats[index]["history"], visible=True),
+                index,
+                gr.update(visible=False),
+                gr.update(visible=False),
+                gr.update(visible=False),
+            )
+
+        chats_list.click(
+            open_chat,
+            [chats_list, chats_state],
+            [thread, chat_index, greeting, starters, download],
+        )
 
         def on_semester(sem: str):
             return (

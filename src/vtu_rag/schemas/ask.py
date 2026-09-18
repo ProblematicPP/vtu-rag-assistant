@@ -10,7 +10,7 @@ class AskRequest(SearchFilterParams):
     question: str = Field(
         ..., min_length=3, max_length=1000, examples=["Explain dual-mode operation."]
     )
-    top_k: int = Field(5, ge=1, le=15)
+    top_k: int = Field(8, ge=1, le=15)
     use_cache: bool = True
 
 

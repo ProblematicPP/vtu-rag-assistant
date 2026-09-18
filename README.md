@@ -1,6 +1,8 @@
-# 📘 VTU RAG Assistant
+# 📘 ChatVTU
 
 **Ask your VTU notes a question, get an exam-ready answer — with the source PDF and its diagrams.**
+
+*A RAG assistant for VTU engineering students, running entirely on your own machine.*
 
 An agentic retrieval-augmented generation (RAG) system for students of **Visvesvaraya Technological
 University**. Drop your module notes into a folder; the system parses them (OCR'ing scanned

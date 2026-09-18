@@ -1,4 +1,4 @@
-"""Turns retrieved chunks into prompt context and maps [n] citations back to sources."""
+"""Turns retrieved chunks into prompt context and tidies the answer that comes back."""
 
 import re
 
@@ -9,6 +9,15 @@ _CITATION_RE = re.compile(r"\[(\d+(?:\s*,\s*\d+)*)\]")
 _SPACE_BEFORE_PUNCTUATION = re.compile(r"[ \t]+([.,;:!?])")
 _RUNS_OF_SPACES = re.compile(r"[ \t]{2,}")
 _TRAILING_SPACE = re.compile(r"[ \t]+$", re.MULTILINE)
+_RUNS_OF_BLANK_LINES = re.compile(r"\n{3,}")
+
+# "[the diagram shown]", "**Diagram:** The diagram shown illustrates…" — small
+# models narrate the figure even when told not to. The student can already see it.
+_DIAGRAM_LINE = re.compile(
+    r"^[ \t]*\[?\**[ \t]*(?:the\s+)?(?:diagram|figure)\b[^\n]*\bshown\b[^\n]*$",
+    re.IGNORECASE | re.MULTILINE,
+)
+_DIAGRAM_BRACKET = re.compile(r"\[[^\]\n]*\bdiagram\s+shown\b[^\]\n]*\]", re.IGNORECASE)
 
 # Keep prompts inside small local models' context windows
 MAX_CONTEXT_WORDS = 3000
@@ -55,6 +64,13 @@ def strip_citation_markers(answer: str) -> str:
     cleaned = _SPACE_BEFORE_PUNCTUATION.sub(r"\1", cleaned)
     cleaned = _RUNS_OF_SPACES.sub(" ", cleaned)
     return _TRAILING_SPACE.sub("", cleaned).strip()
+
+
+def drop_diagram_narration(answer: str) -> str:
+    """Removes chatter about the diagram displayed beneath the answer."""
+    cleaned = _DIAGRAM_BRACKET.sub("", answer)
+    cleaned = _DIAGRAM_LINE.sub("", cleaned)
+    return _RUNS_OF_BLANK_LINES.sub("\n\n", cleaned).strip()
 
 
 def mark_cited(answer: str, sources: list[Source]) -> list[Source]:

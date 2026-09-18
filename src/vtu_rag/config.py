@@ -142,7 +142,7 @@ class AgentSettings(BaseSettings):
 
     max_rewrites: int = 2
     guardrail_threshold: int = 50
-    top_k: int = 5
+    top_k: int = 8
 
 
 class LangfuseSettings(BaseSettings):

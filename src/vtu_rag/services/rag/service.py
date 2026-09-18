@@ -8,6 +8,7 @@ from vtu_rag.services.cache import ResponseCache
 from vtu_rag.services.llm import ChatMessage, LLMProvider
 from vtu_rag.services.rag import prompts
 from vtu_rag.services.rag.context import (
+    drop_diagram_narration,
     format_context,
     mark_cited,
     scope_description,
@@ -39,21 +40,29 @@ class AnswerGenerator:
         filters: SearchFilters,
         trace: Trace = NOOP_TRACE,
         diagram_shown: bool = False,
+        marks: int | None = None,
     ) -> tuple[str, list[Source]]:
         if not hits:
             return prompts.NO_CONTEXT_ANSWER.format(scope=scope_description(filters)), []
 
         context, sources = format_context(hits)
-        diagram_rule = prompts.DIAGRAM_SHOWN if diagram_shown else prompts.DIAGRAM_MISSING
+        system = prompts.ANSWER_SYSTEM
+        system += prompts.DIAGRAM_SHOWN if diagram_shown else prompts.DIAGRAM_MISSING
+        if marks:
+            # One well-explained point per two marks is about right for VTU
+            system += prompts.MARKS_HINT.format(marks=marks, points=max(3, round(marks / 2)))
         messages = [
-            ChatMessage("system", prompts.ANSWER_SYSTEM + diagram_rule),
+            ChatMessage("system", system),
             ChatMessage("user", prompts.ANSWER_USER.format(question=question, context=context)),
         ]
         response = await self.llm.generate(messages)
         trace.generation("generate-answer", response, input=[m.as_dict() for m in messages])
         answer = response.content.strip()
+        cleaned = strip_citation_markers(answer)
+        if diagram_shown:
+            cleaned = drop_diagram_narration(cleaned)
         # Keep the cited flags (they order the diagrams) but drop the markers
-        return strip_citation_markers(answer), mark_cited(answer, sources)
+        return cleaned, mark_cited(answer, sources)
 
 
 class RAGService:
@@ -73,21 +82,34 @@ class RAGService:
         # Answers the question "will a diagram from the notes be shown?"
         self.diagram_probe = diagram_probe or no_diagram
 
-    def cache_key(self, kind: str, question: str, filters: SearchFilters, top_k: int) -> str:
+    def cache_key(
+        self,
+        kind: str,
+        question: str,
+        filters: SearchFilters,
+        top_k: int,
+        marks: int | None = None,
+    ) -> str:
         return ResponseCache.make_key(
             kind,
             question=" ".join(question.lower().split()),
             filters=filters.cache_key(),
             top_k=top_k,
+            marks=marks or 0,
             provider=self.llm.name,
             model=self.llm.model,
         )
 
     async def ask(
-        self, question: str, filters: SearchFilters, top_k: int = 5, use_cache: bool = True
+        self,
+        question: str,
+        filters: SearchFilters,
+        top_k: int = 5,
+        use_cache: bool = True,
+        marks: int | None = None,
     ) -> AskResponse:
         started = time.perf_counter()
-        key = self.cache_key("ask", question, filters, top_k)
+        key = self.cache_key("ask", question, filters, top_k, marks)
         if use_cache and (cached := await self.cache.get(key)):
             return AskResponse.model_validate(cached | {"cached": True})
 
@@ -100,7 +122,7 @@ class RAGService:
 
         diagram_shown = await self.diagram_probe(result.hits, question)
         answer, sources = await self.generator.generate(
-            question, result.hits, filters, trace, diagram_shown=diagram_shown
+            question, result.hits, filters, trace, diagram_shown=diagram_shown, marks=marks
         )
         response = AskResponse(
             question=question,

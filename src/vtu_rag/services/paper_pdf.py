@@ -159,7 +159,7 @@ def build_pdf(paper: SolvedPaper, resolve_figure, include_figures: bool = True) 
         topMargin=16 * mm,
         bottomMargin=16 * mm,
         title=paper.title,
-        author="VTU Exam Buddy",
+        author="ChatVTU",
     )
     usable = doc.width
 
