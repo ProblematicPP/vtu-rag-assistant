@@ -8,6 +8,8 @@ photocopies), indexes them for hybrid keyword + semantic search, and answers que
 what your notes actually say — then links the source PDF at the page it used and shows the diagrams
 from that page, because VTU answers usually want one drawn.
 
+Ask one question, or upload a whole past paper and get every question answered as a printable PDF.
+
 Everything runs on your own machine: `docker compose up --build`, with the LLM on your GPU via Ollama.
 No API keys are required to get started.
 
@@ -37,7 +39,8 @@ the original PDF at page 9.
 
 - [How it works](#how-it-works) · [Quick start](#quick-start) · [Adding your notes](#adding-your-notes)
 - [Ingestion in detail](#ingestion-in-detail) · [Retrieval](#retrieval) · [The agent](#the-agent)
-- [API](#api) · [Configuration](#configuration) · [Development](#development)
+- [Whole question papers](#whole-question-papers) · [API](#api) · [Configuration](#configuration)
+- [Development](#development)
 
 ---
 
@@ -46,7 +49,7 @@ the original PDF at page 9.
 ```mermaid
 flowchart LR
     subgraph Clients
-        G[Gradio chat UI]
+        G[Gradio UI<br/>question or whole paper]
         T[Telegram bot<br/><i>optional</i>]
     end
 
@@ -104,7 +107,7 @@ reports healthy, open **<http://localhost:7860>**.
 
 | Service | URL | Notes |
 |---|---|---|
-| **Chat UI** (Gradio) | <http://localhost:7860> | ask questions here |
+| **The app** (Gradio) | <http://localhost:7860> | ask a question, or upload a paper |
 | API docs (Swagger) | <http://localhost:8000/docs> | every endpoint, try-it-out |
 | Health | <http://localhost:8000/health> | per-service status |
 | Airflow | <http://localhost:8080> | `admin` / `admin` |
@@ -276,6 +279,39 @@ exactly why an answer came out the way it did.
 
 ---
 
+## Whole question papers
+
+Upload a past paper — a PDF, or a photo taken on your phone — and every question comes back
+answered from your notes, as a study sheet on screen and a PDF you can print.
+
+```mermaid
+flowchart LR
+    U[Question paper<br/>PDF or photo] --> T{Has a text layer?}
+    T -->|yes| P[pypdf]
+    T -->|no| O[Tesseract OCR]
+    P --> Q[Parse VTU numbering<br/>Q.1 a. … 08 Marks]
+    O --> Q
+    Q --> A[Answer each question<br/>through the normal ask path]
+    A --> S[Study sheet in the browser]
+    A --> D[Printable PDF<br/>diagrams embedded]
+```
+
+The parser understands how VTU papers are written: lettered sub-parts are separate answerable
+questions, marks are read from the margin, questions wrapped across lines are joined, and the
+university header, USN box and "answer any FIVE" instructions are discarded.
+
+Each question is answered in turn — a single GPU serves the model, so answers arrive one by one and
+the sheet fills in as they land. The PDF pass reuses the cached answers, so it is quick.
+
+| Method | Path | Purpose |
+|---|---|---|
+| `POST` | `/api/v1/papers/extract` | Read the questions out of a paper |
+| `POST` | `/api/v1/papers/answer` | Answer them all, as JSON |
+| `POST` | `/api/v1/papers/pdf` | Answer them all, as a printable PDF |
+
+The PDF is set for paper: a serif face at printable size, each question kept with the start of its
+answer, diagrams inline at a size you can copy from, and the source note named under every answer.
+
 ## API
 
 | Method | Path | Purpose |
@@ -292,6 +328,7 @@ exactly why an answer came out the way it did.
 | `POST` | `/api/v1/search` | Hybrid / BM25 / vector search over chunks |
 | `POST` | `/api/v1/ask` | Quick answer |
 | `POST` | `/api/v1/agentic-ask` | Full agent run |
+| `POST` | `/api/v1/papers/extract`, `/answer`, `/pdf` | Whole question papers (see above) |
 
 Search and both ask endpoints accept the same filters: `branch`, `scheme`, `semester`, `subject_code`,
 `module_numbers`.
