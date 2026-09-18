@@ -207,7 +207,12 @@ class AgentGraph:
         span = ctx.trace.span("generate", input={"hits": len(hits)})
         diagram_shown = await self.diagram_probe(hits, state["standalone"])
         answer, sources = await self.generator.generate(
-            state["standalone"], hits, ctx.filters, ctx.trace, diagram_shown=diagram_shown
+            state["standalone"],
+            hits,
+            ctx.filters,
+            ctx.trace,
+            diagram_shown=diagram_shown,
+            marks=ctx.marks,
         )
         span.end(output={"answer_chars": len(answer), "sources": len(sources)})
         return {

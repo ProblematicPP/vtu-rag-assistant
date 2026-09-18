@@ -50,16 +50,44 @@ function Provenance({ answer }: { answer: AskResponse }) {
   );
 }
 
-export function Answer({ text, answer }: { text: string; answer?: AskResponse }) {
+function Figures({ figures }: { figures: Figure[] }) {
   return (
-    <div className="answer">
-      <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>
-      {(answer?.figures ?? []).map((figure) => (
+    <>
+      {figures.map((figure) => (
         <figure key={figure.id}>
           <img src={figure.url} alt={captionFor(figure)} loading="lazy" />
           <figcaption>{captionFor(figure)}</figcaption>
         </figure>
       ))}
+    </>
+  );
+}
+
+function Prose({ text }: { text: string }) {
+  return <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>;
+}
+
+export function Answer({ text, answer }: { text: string; answer?: AskResponse }) {
+  const parts = answer?.parts ?? [];
+  return (
+    <div className="answer">
+      {parts.length > 0 ? (
+        // (i), (ii)… each followed straight away by the diagrams that belong to it
+        parts.map((part) => (
+          <section key={part.label} className="part">
+            <h4 className="part-heading">
+              <span className="part-label">({part.label})</span> {part.question}
+            </h4>
+            <Prose text={part.answer} />
+            <Figures figures={part.figures} />
+          </section>
+        ))
+      ) : (
+        <>
+          <Prose text={text} />
+          <Figures figures={answer?.figures ?? []} />
+        </>
+      )}
       {answer && <Provenance answer={answer} />}
     </div>
   );

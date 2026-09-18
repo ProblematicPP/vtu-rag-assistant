@@ -41,3 +41,5 @@ class AgentContext:
     trace: Trace = NOOP_TRACE
     # Earlier turns of the conversation, oldest first
     history: list[Turn] = field(default_factory=list)
+    # Marks on a paper, when known; the answer is sized to them
+    marks: int | None = None

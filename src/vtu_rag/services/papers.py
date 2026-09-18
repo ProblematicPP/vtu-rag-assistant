@@ -11,7 +11,7 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 
 from vtu_rag.ingestion.question_paper import PaperQuestion
-from vtu_rag.schemas.ask import AskResponse, FigureOut, NoteRef
+from vtu_rag.schemas.ask import AskResponse, FigureOut, NoteRef, PartAnswer
 from vtu_rag.services.search import SearchFilters
 
 logger = logging.getLogger(__name__)
@@ -25,6 +25,8 @@ class SolvedQuestion:
     answer: str
     figures: list[FigureOut] = field(default_factory=list)
     notes: list[NoteRef] = field(default_factory=list)
+    # (i), (ii)… answered separately, each with its own diagrams
+    parts: list[PartAnswer] = field(default_factory=list)
     error: str | None = None
 
 
@@ -64,6 +66,7 @@ class PaperService:
                         answer=response.answer,
                         figures=response.figures,
                         notes=response.notes,
+                        parts=response.parts,
                     )
                 )
             except asyncio.CancelledError:

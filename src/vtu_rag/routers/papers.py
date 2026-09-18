@@ -8,7 +8,7 @@ from vtu_rag.ingestion.ocr import OcrConfig
 from vtu_rag.ingestion.parsers import ParseError
 from vtu_rag.ingestion.question_paper import PaperQuestion, parse_questions, read_paper
 from vtu_rag.repositories import FigureRepository
-from vtu_rag.schemas.ask import notes_from_sources
+from vtu_rag.routers.ask import answer_question
 from vtu_rag.schemas.papers import (
     ExtractedPaper,
     PaperAnswerRequest,
@@ -17,7 +17,6 @@ from vtu_rag.schemas.papers import (
 )
 from vtu_rag.services.paper_pdf import build_pdf
 from vtu_rag.services.papers import PaperService, SolvedPaper
-from vtu_rag.services.rag.figures import page_spans, select_figures
 
 router = APIRouter(prefix="/api/v1/papers", tags=["question papers"])
 
@@ -60,30 +59,22 @@ async def _solve(
         for q in request.questions[:MAX_QUESTIONS]
     ]
     filters = request.to_filters()
-    settings = container.settings.figures
-
     marks_by_text = {q.text: q.marks for q in request.questions}
 
     async def answer(question: str, search_filters):  # noqa: ANN001,ANN202 - local closure
-        response = await container.rag.ask(
-            question,
-            search_filters,
-            top_k=request.top_k,
-            use_cache=request.use_cache,
-            marks=marks_by_text.get(question),
-        )
-        response.notes = notes_from_sources(response.sources)
-        spans = page_spans(response.sources) if settings.enabled else []
-        if spans:
-            figures = await FigureRepository(session).find_on_pages(spans)
-            response.figures = select_figures(
-                figures,
-                response.sources,
-                settings.max_per_answer,
-                question=question,
-                answer=response.answer,
+        async def answer_one(text: str, marks: int | None):  # noqa: ANN202 - local closure
+            return await container.rag.ask(
+                text,
+                search_filters,
+                top_k=request.top_k,
+                use_cache=request.use_cache,
+                marks=marks,
             )
-        return response
+
+        # Same path as a typed question: (i)/(ii) parts are answered one by one
+        return await answer_question(
+            question, marks_by_text.get(question), answer_one, session, container
+        )
 
     # solve() yields after every answer so a UI can show progress; here we just
     # want the finished paper, so drain it

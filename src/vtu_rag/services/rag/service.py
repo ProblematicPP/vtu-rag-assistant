@@ -9,10 +9,12 @@ from vtu_rag.services.llm import ChatMessage, LLMProvider
 from vtu_rag.services.rag import prompts
 from vtu_rag.services.rag.context import (
     drop_diagram_narration,
+    drop_repeated_blocks,
     format_context,
     mark_cited,
     scope_description,
     strip_citation_markers,
+    tidy_markdown,
 )
 from vtu_rag.services.rag.followup import FollowUpResolver
 from vtu_rag.services.search import SearchFilters, SearchHit, SearchService
@@ -62,6 +64,7 @@ class AnswerGenerator:
         cleaned = strip_citation_markers(answer)
         if diagram_shown:
             cleaned = drop_diagram_narration(cleaned)
+        cleaned = drop_repeated_blocks(tidy_markdown(cleaned))
         # Keep the cited flags (they order the diagrams) but drop the markers
         return cleaned, mark_cited(answer, sources)
 
@@ -100,6 +103,7 @@ class RAGService:
             marks=marks or 0,
             provider=self.llm.name,
             model=self.llm.model,
+            prompts=prompts.VERSION,
         )
 
     async def ask(

@@ -79,3 +79,12 @@ class TestStripCitationMarkers:
     def test_plain_answers_are_untouched(self):
         answer = "A semaphore is an integer variable.\n\n- wait()\n- signal()"
         assert context.strip_citation_markers(answer) == answer
+
+
+def test_the_prompt_fingerprint_follows_the_prompt_text(monkeypatch):
+    from vtu_rag.services.rag import prompts
+
+    before = prompts._fingerprint()
+    monkeypatch.setattr(prompts, "ANSWER_SYSTEM", prompts.ANSWER_SYSTEM + "- one more rule\n")
+    assert prompts._fingerprint() != before
+    assert before == prompts.VERSION and len(before) == 12

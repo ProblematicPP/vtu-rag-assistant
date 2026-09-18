@@ -6,6 +6,7 @@ from vtu_rag.config import AgentSettings
 from vtu_rag.schemas.ask import AgenticAskResponse, AgentStep, Turn
 from vtu_rag.services.cache import ResponseCache
 from vtu_rag.services.llm import LLMProvider
+from vtu_rag.services.rag import prompts
 from vtu_rag.services.rag.service import DiagramProbe
 from vtu_rag.services.search import SearchFilters, SearchMode, SearchService
 from vtu_rag.services.tracing import Tracer
@@ -34,6 +35,7 @@ class AgentService:
         top_k: int | None = None,
         use_cache: bool = True,
         history: list[Turn] | None = None,
+        marks: int | None = None,
     ) -> AgenticAskResponse:
         started = time.perf_counter()
         top_k = top_k or self.settings.top_k
@@ -46,9 +48,11 @@ class AgentService:
             context=" ".join(history[-1].question.lower().split()) if history else "",
             filters=filters.cache_key(),
             top_k=top_k,
+            marks=marks or 0,
             provider=self.llm.name,
             model=self.llm.model,
             max_rewrites=self.settings.max_rewrites,
+            prompts=prompts.VERSION,
         )
         if use_cache and (cached := await self.cache.get(key)):
             return AgenticAskResponse.model_validate(cached | {"cached": True})
@@ -60,7 +64,9 @@ class AgentService:
         initial: AgentState = {"question": question, "rewritten_queries": [], "steps": []}
         final: AgentState = await self.agent.graph.ainvoke(
             initial,
-            context=AgentContext(filters=filters, top_k=top_k, trace=trace, history=list(history)),
+            context=AgentContext(
+                filters=filters, top_k=top_k, trace=trace, history=list(history), marks=marks
+            ),
         )
 
         search_mode = final.get("search_mode")

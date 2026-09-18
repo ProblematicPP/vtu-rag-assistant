@@ -15,6 +15,16 @@ export interface NoteRef {
   pages: number[];
 }
 
+/** One sub-question — (i), (ii) — answered on its own, with its own diagrams. */
+export interface PartAnswer {
+  label: string;
+  question: string;
+  answer: string;
+  resolved_question?: string | null;
+  figures: Figure[];
+  notes: NoteRef[];
+}
+
 /** What /ask and /agentic-ask return. Agent-only fields are optional. */
 export interface AskResponse {
   question: string;
@@ -27,6 +37,7 @@ export interface AskResponse {
   latency_ms?: number | null;
   in_scope?: boolean;
   rewritten_queries?: string[];
+  parts?: PartAnswer[];
 }
 
 export interface Subject {

@@ -154,6 +154,16 @@ def select_figures(
     if not figures:
         return []
 
+    # When the question itself names what some diagram shows, only those
+    # qualify. An answer about multiprogramming mentions "CPU" and "memory" in
+    # passing; that is no reason to hang a multiprocessor diagram under it.
+    # The answer's words still rank them, and decide alone when the question
+    # names nothing any diagram does.
+    asked = _terms(question) - generic_terms(sources)
+    named = [f for f in figures if figure_score(f, asked) > 0] if asked else []
+    if named:
+        figures = named
+
     question_terms = topic_terms(question, answer, sources)
     scored = [(figure_score(f, question_terms), f) for f in figures]
     best = max((score for score, _ in scored), default=0.0)

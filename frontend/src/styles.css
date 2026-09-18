@@ -443,22 +443,66 @@ fieldset {
 
 .answer {
   font-size: 14.5px;
+  line-height: 1.65;
   color: var(--ink);
   max-width: 68ch;
 }
 
 .answer p {
-  margin: 0 0 12px;
+  margin: 0 0 14px;
 }
 
 .answer ul,
 .answer ol {
-  margin: 0 0 12px;
+  margin: 0 0 16px;
   padding-left: 22px;
 }
 
+/* Air between points: an exam answer is read point by point, and a wall of
+   bullets is where the eye loses its place */
 .answer li {
-  margin-bottom: 5px;
+  margin-bottom: 12px;
+}
+
+.answer li > ul,
+.answer li > ol {
+  margin: 8px 0 0;
+}
+
+.answer li li {
+  margin-bottom: 6px;
+}
+
+.answer li > p {
+  margin: 0 0 6px;
+}
+
+.answer li::marker {
+  color: var(--ink-3);
+}
+
+.answer strong {
+  font-weight: 600;
+}
+
+/* (i), (ii)… — each part a section of its own, with its diagrams beneath it */
+.part + .part {
+  margin-top: 28px;
+  padding-top: 22px;
+  border-top: 1px solid var(--line);
+}
+
+.part-heading {
+  font-family: var(--serif);
+  font-size: 16.5px;
+  font-weight: 600;
+  line-height: 1.4;
+  margin: 0 0 12px;
+}
+
+.part-label {
+  color: var(--ink-3);
+  font-weight: 400;
 }
 
 .answer h1,

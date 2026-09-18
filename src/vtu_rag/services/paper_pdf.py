@@ -69,10 +69,10 @@ def _styles() -> dict[str, ParagraphStyle]:
         ),
         "body": body,
         "bullet": ParagraphStyle(
-            "bullet", parent=body, leftIndent=12, bulletIndent=2, spaceAfter=3
+            "bullet", parent=body, leftIndent=12, bulletIndent=2, spaceAfter=6
         ),
         "subbullet": ParagraphStyle(
-            "subbullet", parent=body, leftIndent=26, bulletIndent=16, spaceAfter=2, fontSize=10
+            "subbullet", parent=body, leftIndent=26, bulletIndent=16, spaceAfter=4, fontSize=10
         ),
         "subhead": ParagraphStyle(
             "subhead",
@@ -185,16 +185,26 @@ def build_pdf(paper: SolvedPaper, resolve_figure, include_figures: bool = True) 
             failed = f"<i>Not answered: {html.escape(item.error)}</i>"
             block.append(Paragraph(failed, styles["body"]))
         else:
-            # Keep the question with the opening of its answer across a page break
-            first = _answer_flowables(item.answer, styles)
-            block.extend(first[:1])
-            story.append(KeepTogether(block))
-            story.extend(first[1:])
-            block = []
-
-            if include_figures:
-                for figure in item.figures:
-                    story.extend(_figure_flowables(figure, resolve_figure, styles, usable))
+            # Each part is followed by its own diagrams; a single answer by all of them
+            sections = [
+                (f"({part.label}) {part.question}", part.answer, part.figures)
+                for part in item.parts
+            ] or [(None, item.answer, item.figures)]
+            for index, (title, answer, figures) in enumerate(sections):
+                flowables = _answer_flowables(answer, styles)
+                if title:
+                    flowables.insert(0, Paragraph(_inline(title), styles["subhead"]))
+                if index == 0:
+                    # Keep the question with the opening of its answer across a page break
+                    block.extend(flowables[:1])
+                    story.append(KeepTogether(block))
+                    story.extend(flowables[1:])
+                    block = []
+                else:
+                    story.extend(flowables)
+                if include_figures:
+                    for figure in figures:
+                        story.extend(_figure_flowables(figure, resolve_figure, styles, usable))
 
             if item.notes:
                 where = "; ".join(

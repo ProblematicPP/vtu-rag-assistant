@@ -20,6 +20,8 @@ class AskRequest(SearchFilterParams):
     # Earlier turns of this conversation, oldest first. Only used when the
     # question leans on them ("explain them briefly"); otherwise ignored.
     history: list[Turn] = Field(default_factory=list, max_length=12)
+    # Marks the question carries on a paper; sets how long the answer should be
+    marks: int | None = Field(None, ge=1, le=30)
     top_k: int = Field(8, ge=1, le=15)
     use_cache: bool = True
 
@@ -163,6 +165,17 @@ def notes_from_sources(sources: list[Source], limit: int = 3) -> list[NoteRef]:
     return list(by_note.values())
 
 
+class PartAnswer(BaseModel):
+    """One sub-question of a multi-part question, answered on its own."""
+
+    label: str  # "i", "ii", "a"
+    question: str
+    answer: str
+    resolved_question: str | None = None
+    figures: list[FigureOut] = Field(default_factory=list)
+    notes: list[NoteRef] = Field(default_factory=list)
+
+
 class AskResponse(BaseModel):
     question: str
     # What was actually searched and answered, when a follow-up was resolved
@@ -177,6 +190,9 @@ class AskResponse(BaseModel):
     cached: bool = False
     latency_ms: float | None = None
     trace_id: str | None = None
+    # Set when the question had parts — (i), (ii) — answered one by one. `answer`
+    # and `figures` still hold everything, in order, for clients that ignore this.
+    parts: list[PartAnswer] = Field(default_factory=list)
 
 
 class AgentStep(BaseModel):

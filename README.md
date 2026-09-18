@@ -283,6 +283,27 @@ stateDiagram-v2
 Every step is traced to **Langfuse** and returned in the response as a `steps` log, so you can see
 exactly why an answer came out the way it did.
 
+### Questions in parts
+
+VTU questions often bundle sub-questions: *"Distinguish between (i) multiprogramming and
+multitasking (ii) multiprocessor and clustered systems."* Asked as one, the four topics compete for
+the same eight excerpts and the same grading call, so a section only one part needs gets judged
+irrelevant and dropped, and every diagram lands after the last part.
+
+So `(i)/(ii)`, `(a)/(b)` and `1)/2)` parts are split off and asked as questions of their own —
+*"Distinguish between multiprocessor system and clustered system"* — each with its own retrieval,
+grading and diagrams, then put back together in order. A paper question's marks are shared between
+its parts. The response keeps the whole answer in `answer` and each part, with its diagrams, in
+`parts`.
+
+### Answer formatting
+
+A 3B model writes sub-points as `" • Definition: …"`, which isn't Markdown list syntax, so rendered
+they ran together into one paragraph. Every answer is rewritten into real nested lists before it
+leaves the API, repeated blocks from a looping model are dropped, and an ASCII sketch is removed
+whenever a diagram from the notes is shown instead. Answers are cached against a fingerprint of the
+prompts, so editing a prompt never serves text the old one produced.
+
 ---
 
 ## Follow-up questions
@@ -414,7 +435,7 @@ docker compose --profile dashboards up -d              # OpenSearch Dashboards o
 
 ```bash
 uv sync                          # Python 3.11–3.13
-uv run pytest                    # 147 unit tests, no services needed
+uv run pytest                    # 168 unit tests, no services needed
 uv run ruff check src tests
 
 # API on the host against the compose services

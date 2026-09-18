@@ -297,3 +297,44 @@ class TestAnswerVocabulary:
             [self.UNRELATED], sources, 3, question="Explain paging", answer="Paging splits memory."
         )
         assert picked == []
+
+
+class TestTheQuestionComesFirst:
+    """Part (i) of a paper question: an answer about multiprogramming talks about
+    "CPU utilization" and "memory", and pulled the multiprocessor diagrams
+    (labelled "CPU registers cache memory") in under it."""
+
+    MULTIPROGRAMMING = FakeFigure(
+        id=152,
+        note_id=34,
+        page=9,
+        sha256="mp",
+        caption="Fig - Memory layout for a multiprogramming system",
+        label_text="operating system job",
+    )
+    SMP = FakeFigure(
+        id=150, note_id=34, page=8, sha256="smp", label_text="CPU registers cache memory"
+    )
+    ANSWER = "Multiprogramming increases CPU utilization by keeping several jobs in memory."
+
+    def test_a_diagram_the_question_names_shuts_out_answer_only_matches(self):
+        sources = [source(1, 34, 8, cited=False), source(2, 34, 9, cited=False)]
+        picked = select_figures(
+            [self.SMP, self.MULTIPROGRAMMING],
+            sources,
+            3,
+            question="Distinguish between Multiprogramming and Multitasking",
+            answer=self.ANSWER,
+        )
+        assert [f.id for f in picked] == [152]
+
+    def test_the_answer_decides_when_the_question_names_no_diagram(self):
+        sources = [source(1, 34, 8, cited=False), source(2, 34, 9, cited=False)]
+        picked = select_figures(
+            [self.SMP, self.MULTIPROGRAMMING],
+            sources,
+            3,
+            question="Distinguish between Multiprocessor System and Clustered System",
+            answer="Each processor has its own registers and cache and they share memory.",
+        )
+        assert [f.id for f in picked] == [150]

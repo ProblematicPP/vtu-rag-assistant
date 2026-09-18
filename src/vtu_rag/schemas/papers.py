@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 
-from vtu_rag.schemas.ask import FigureOut, NoteRef
+from vtu_rag.schemas.ask import FigureOut, NoteRef, PartAnswer
 from vtu_rag.schemas.search import SearchFilterParams
 from vtu_rag.services.papers import SolvedPaper
 
@@ -31,6 +31,7 @@ class SolvedQuestionOut(BaseModel):
     answer: str
     figures: list[FigureOut] = Field(default_factory=list)
     notes: list[NoteRef] = Field(default_factory=list)
+    parts: list[PartAnswer] = Field(default_factory=list)
     error: str | None = None
 
 
@@ -52,6 +53,7 @@ class SolvedPaperOut(BaseModel):
                     answer=item.answer,
                     figures=item.figures,
                     notes=item.notes,
+                    parts=item.parts,
                     error=item.error,
                 )
                 for item in paper.items
